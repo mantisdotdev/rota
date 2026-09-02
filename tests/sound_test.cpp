@@ -1,4 +1,4 @@
-// The sound engine stage by stage: T-63–T-65, T-67–T-74 (spec/scenarios.md).
+// The sound engine stage by stage: T-63–T-65, T-67–T-74, T-77 (spec/scenarios.md).
 #include <cmath>
 
 #include "sound/delay.h"
@@ -256,10 +256,8 @@ TEST_CASE("T-67 A sample voice plays the kit's sample with its pitch, start and 
     CHECK(out[100] == doctest::Approx(value(100)));
     CHECK(out[100 + kSampleFadeFrames - 1] < value(100 + kSampleFadeFrames - 1) * 0.01f);
   }
-  SUBCASE("velocity to gain is the square") {
+  SUBCASE("the gain passed in scales the output; the engine sets it to the velocity squared") {
     SampleVoice voice;
-    Engine engine_unused;  // the mapping lives in the engine; here the voice takes a gain
-    (void)engine_unused;
     voice.start(sample, pad, 0.25f);
     std::vector<float> out(128, 0.0f);
     voice.render(out.data(), 0, 128);
@@ -481,7 +479,7 @@ TEST_CASE("T-74 Sixteen voices sound at once and the seventeenth steals the quie
   }
 }
 
-TEST_CASE("Reverb: an impulse leaves a tail that decays and ends") {
+TEST_CASE("T-77 An impulse into the reverb leaves a tail that decays and ends") {
   Reverb reverb;
   std::vector<float> in(static_cast<size_t>(3 * kSampleRate), 0.0f);
   std::vector<float> left(in.size(), 0.0f);

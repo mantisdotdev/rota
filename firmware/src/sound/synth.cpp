@@ -1,5 +1,6 @@
 #include "sound/synth.h"
 
+#include <cmath>
 #include <cstring>
 
 #include "sound/dsp.h"
