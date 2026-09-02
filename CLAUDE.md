@@ -80,7 +80,7 @@ Write for someone who did not watch the tools: what changed; how you know; what 
 - Inside `engine/`, time is a fraction of one cycle in `[0, 1)`. Seconds, samples and bpm exist only in `app/` (scheduler) and `sound/`.
 - Chance uses the injected seeded PRNG. `rand()`, `random()`, or any global random source in `engine/` is wrong.
 - Smart-default tap templates (snare `~ sd`, etc.) are kit data in `spec/kits/`, never engine code.
-- Share codes are the contract between web, device, and tests. Once shipped, changing the grammar means a new version prefix (`RT3`), never a silent change to `RT2`; D-043 was the last pre-release change.
+- Share codes are the contract between web, device, and tests. Once shipped, changing the grammar of a section (`RT2`) or song (`RT2S`) code means a new version prefix (`RT3`, `RT3S`), never a silent change to either; D-043 was the last pre-release change.
 - No heap allocation after init anywhere in firmware. Nothing that allocates, locks, logs, or does file I/O inside the audio callback.
 - `engine/` and `sound/` must not include Arduino, Teensy, SDL, or `hal/` headers. If a test needs one, the code is in the wrong layer.
 - Edits commit on the next beat (PRD §6.7). A test that expects an edit to fire immediately is testing the audition sound, not the pattern.

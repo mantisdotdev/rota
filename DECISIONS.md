@@ -1,6 +1,6 @@
 # Decisions
 
-What was decided, why, and when to look again. One row per decision. IDs are sequential and never reused. `Decision` says what; `Why` gives the reasons and the alternatives rejected, plus the date for rows added after the seed; `Revisit when` names the trigger that reopens it. D-001–D-010 are the seed from PRD §15 (v0.1, September 2026). Append new rows; edit old rows only to record a revisit outcome. A choice the PRD does not cover gets a row here before the code that depends on it (CLAUDE.md, Edit rules). The product was Pattern Box until D-043: rows before it that say Pattern Box or `PB2` mean Rota and `RT2`.
+What was decided, why, and when to look again. One row per decision. IDs are sequential and never reused. `Decision` says what; `Why` gives the reasons and the alternatives rejected, plus the date for rows added after the seed; `Revisit when` names the trigger that reopens it. D-001–D-010 are the seed from PRD §15 (v0.1, September 2026). Append new rows; edit old rows only to record a revisit outcome. A choice the PRD does not cover gets a row here before the code that depends on it (CLAUDE.md, Edit rules). The product was Pattern Box until D-043: rows before it that say Pattern Box, `PB2` or `PB2S` mean Rota, `RT2` and `RT2S`.
 
 | ID | Decision | Why | Revisit when |
 |---|---|---|---|
