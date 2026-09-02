@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit review settings for Rota. The path instructions restate PRD §12's
+# architecture rules and CLAUDE.md's landmines, so a review holds the same line
+# as CI's layer grep and catches what a grep cannot.
+language: en-US
+tone_instructions: "Terse and specific. Cite PRD.md sections, DECISIONS.md IDs and spec/scenarios.md IDs. No praise."
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  pre_merge_checks:
+    # Docstring coverage is a Python measure; on the C++ engine it counts comments
+    # that do not exist by convention and gives no signal.
+    docstrings:
+      mode: "off"
+  path_filters:
+    - "!build/**"
+    - "!firmware/.pio/**"
+    - "!tests/doctest/**"
+    - "!firmware/src/engine/kits/*.h"
+  path_instructions:
+    - path: "firmware/src/engine/**"
+      instructions: |
+        PRD §12 rule 1 and the CLAUDE.md landmines apply. Flag each of these as blocking:
+        - An include of Arduino, Teensy core, SDL or hal/ headers, or any other platform-specific header.
+        - Heap allocation after init: new, malloc, std::vector, std::string, std::function or any container that grows. Every size comes from engine/limits.h.
+        - Time in seconds, samples or bpm. Inside engine/, time is a fraction of one cycle in [0, 1) (engine::Fraction, D-040).
+        - rand(), random(), std::random_device or any global random source. Chance draws only from the seeded engine::Prng (D-034).
+        - Kit knowledge in code: tap templates, progressions, pluck sequences and dice loops live in spec/kits/<id>/kit.json and the header generated from it.
+        - A change to the meaning of any RT2 or RT2S share-code field or character without a new version prefix (RT3), or an edit to a golden code in spec/share-format.md.
+        - "Fixing" the elastic redistribution (adding a step moves the existing steps) or adding a grid; that behaviour is the product (D-001).
+        - Undo that touches performance parameters (knobs, key, level, tone, send, chance, mute); undo restores the pattern only (D-035).
+        Also require: every new behaviour names a scenario ID in spec/scenarios.md and has a doctest named after it (§12 rule 2); every choice the PRD does not cover has a DECISIONS.md row before the code that depends on it.
+    - path: "firmware/src/sound/**"
+      instructions: |
+        PRD §12 rule 1 and the sound engine spec apply. Flag as blocking:
+        - An include of Arduino, Teensy core, SDL or hal/ headers.
+        - Allocation, locks, logging, file I/O or any blocking call inside the audio callback or any block-processing path; no heap after init anywhere.
+        - Per-sample processing where the design is block-based.
+        Check that the master chain keeps §12's order (LPF, tempo-locked delay and plate reverb sends, sidechain bus, glue compressor, soft clipper, limiter at −1 dBFS), that the sidechain depth and release come from the kit, and that sound/ consumes engine events and kit data only, never engine state.
+    - path: "firmware/src/hal/**"
+      instructions: |
+        Nothing in this repo has run on real hardware yet. Pin numbers, SPI clocks and I2C addresses come from datasheets and library docs: ask for the source of any such constant and treat it as unverified until the bring-up runbook says otherwise. hal/ is the only place platform code may live, and the host simulator is the reference behaviour: a difference on hardware is fixed in the HAL, never in app/ (§12 rule 5).
+    - path: "spec/**"
+      instructions: |
+        spec/share-format.md is normative: a golden code changes only under a new version prefix, never to make a test pass. Scenario IDs in spec/scenarios.md are never reused; a scenario is retired by striking it through. A kit in spec/kits/<id>/kit.json stays within PRD §6 and share-format §3: sends, level, tone and chance as multiples of 0.1, 1 to 8 degrees per progression, 1 to 4 dice loops, and the header under firmware/src/engine/kits/ regenerated with tools/kit_builder.py in the same change.
+    - path: "tests/**"
+      instructions: |
+        Every test case name starts with the scenario ID it covers. A test is never weakened, skipped or deleted to pass, and no golden code is edited. Tests are deterministic: no real clock, network, sleeps or state shared between cases; randomness only through a fixed seed.
+    - path: "tools/**"
+      instructions: |
+        Python 3 with the standard library only, or C++ that links the engine (render). tools/kit_builder.py output must equal the checked-in header; CI regenerates and diffs it.
+  tools:
+    cppcheck:
+      enabled: true
+    ruff:
+      enabled: true
+chat:
+  auto_reply: true

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 <!--
-Filled for the Pattern Box repo under the C++/HAL plan (PRD §12, D-010).
+Filled for the Rota repo under the C++/HAL plan (PRD §12, D-010).
 Commands verified against the scaffold on 2026-09-02 (session 1).
 Run /context once to confirm this file and .claude/rules/ loaded. Run /doctor every few weeks.
 Hard limits live in .claude/settings.json and .claude/hooks/guard.sh, not here.
@@ -10,7 +10,7 @@ Hard limits live in .claude/settings.json and .claude/hooks/guard.sh, not here.
 Team law for this repo. Personal taste goes in `CLAUDE.local.md` (gitignored). General engineering rules load from `~/.claude/rules/engineering.md`; repo conventions here override them on conflict.
 
 ## Project
-- What: Pattern Box, a pocket music instrument where tapping sounds onto a ring makes a loop that stretches to fit. This repo is the device: firmware, a desktop simulator built from the same code, tools, tests, and hardware documents.
+- What: Rota, a pocket music instrument where tapping sounds onto a ring makes a loop that stretches to fit. This repo is the device: firmware, a desktop simulator built from the same code, tools, tests, and hardware documents.
 - Stack: C++17. PlatformIO for the Teensy 4.1 firmware (environment `teensy41`). CMake + SDL2 for the host simulator. doctest for tests, run on the host. Python 3 for the kit builder and sample generator; `render` is C++ because it links the engine.
 - Entrypoints: `firmware/src/main.cpp` (device), `host/main.cpp` (simulator), `tools/render` (share code to WAV).
 - Code and tests beat this file. If they conflict, follow the code and flag the drift. `PRD.md` beats both on intent: if code and PRD disagree, the code is wrong; say so before changing either.
@@ -80,7 +80,7 @@ Write for someone who did not watch the tools: what changed; how you know; what 
 - Inside `engine/`, time is a fraction of one cycle in `[0, 1)`. Seconds, samples and bpm exist only in `app/` (scheduler) and `sound/`.
 - Chance uses the injected seeded PRNG. `rand()`, `random()`, or any global random source in `engine/` is wrong.
 - Smart-default tap templates (snare `~ sd`, etc.) are kit data in `spec/kits/`, never engine code.
-- Share codes are the contract between web, device, and tests. Once shipped, changing the grammar means a new version prefix (`PB3`), never a silent change to `PB2`; D-018 was the last pre-release change.
+- Share codes are the contract between web, device, and tests. Once shipped, changing the grammar of a section (`RT2`) or song (`RT2S`) code means a new version prefix (`RT3`, `RT3S`), never a silent change to either; D-043 was the last pre-release change.
 - No heap allocation after init anywhere in firmware. Nothing that allocates, locks, logs, or does file I/O inside the audio callback.
 - `engine/` and `sound/` must not include Arduino, Teensy, SDL, or `hal/` headers. If a test needs one, the code is in the wrong layer.
 - Edits commit on the next beat (PRD §6.7). A test that expects an edit to fire immediately is testing the audition sound, not the pattern.
