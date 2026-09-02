@@ -188,8 +188,13 @@ void Controller::button_down(hal::Button button, uint64_t at_us, Model& model, A
     pads_[pad].used = true;
     if (button == hal::Button::undo) {
       const engine::Pad which = engine::pad_at(pad);
+      const char* name = engine::pad_of(*kit_, which).name;
+      if (engine::is_empty(engine::track_of(section.state(), which))) {
+        say(model, at_us, kStatusUs, "%s has no steps", name);  // nothing to remove (D-042)
+        continue;
+      }
       engine::remove_last_step(section, which);
-      say(model, at_us, kStatusUs, "%s: last step removed", engine::pad_of(*kit_, which).name);
+      say(model, at_us, kStatusUs, "%s: last step removed", name);
       continue;
     }
     armed_ = static_cast<int>(button);
