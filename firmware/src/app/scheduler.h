@@ -71,6 +71,7 @@ class Scheduler {
   uint32_t cycle_index_;
   int64_t scheduled_until_;  // every hit before this sample has been handed over
   int64_t next_roll_;        // the next 1/16 grid point the roll has not covered
+  int next_roll_track_;      // the first pad of that grid point not yet handed over
   engine::State playing_;    // the beat's snapshot, mutes cleared
   engine::EventList list_;   // this cycle's events from that snapshot
   int next_event_;           // first item of list_ not yet handed over

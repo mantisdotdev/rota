@@ -34,6 +34,7 @@ Scheduler::Scheduler(const engine::Kit& kit)
       cycle_index_(0),
       scheduled_until_(0),
       next_roll_(0),
+      next_roll_track_(0),
       playing_{},
       list_{},
       next_event_(0) {}
@@ -70,6 +71,7 @@ void Scheduler::tick(Model& model, int64_t position, TriggerQueue& out, Mailbox<
 void Scheduler::begin_beat(Model& model, int64_t at, bool first, Mailbox<sound::Params>& params) {
   beat_start_ = at;
   next_roll_ = at;
+  next_roll_track_ = 0;
   if (first) {
     beat_in_cycle_ = 0;
     cycle_index_ = 0;
@@ -112,7 +114,8 @@ void Scheduler::cross_cycle(Model& model, bool first) {
 
 // Hands over every hit with a sample in [scheduled_until_, until): the pattern's,
 // skipping tracks whose pad is held (§8.1, mute), then the roll's. false when the
-// queue refused one; next_event_ and next_roll_ then point at it for the retry.
+// queue refused one; next_event_, next_roll_ and next_roll_track_ then point at
+// it, so the retry pushes nothing twice.
 bool Scheduler::push_window(const Model& model, int64_t until, TriggerQueue& out) {
   const engine::State& held = model.sections[model.current].state();
   while (next_event_ < list_.count) {
@@ -128,12 +131,16 @@ bool Scheduler::push_window(const Model& model, int64_t until, TriggerQueue& out
   while (next_roll_ < until) {
     if (model.roll) {
       const uint8_t root = chord_root_at(next_roll_);
-      for (int i = 0; i < engine::kTrackCount; ++i) {
+      for (int i = next_roll_track_; i < engine::kTrackCount; ++i) {
         if (!held.tracks[i].mute) continue;
         const engine::Event event = audition(held, *kit_, engine::pad_at(i), root, fraction_of(next_roll_));
-        if (!out.push(ScheduledTrigger{next_roll_, event})) return false;
+        if (!out.push(ScheduledTrigger{next_roll_, event})) {
+          next_roll_track_ = i;
+          return false;
+        }
       }
     }
+    next_roll_track_ = 0;
     next_roll_ += roll_step;
   }
   return true;
