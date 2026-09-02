@@ -14,10 +14,15 @@ jobs:
         run: |
           ! grep -rnE '#include[[:space:]]*[<"](Arduino|SDL|hal/|WProgram|core_pins|imxrt|usb_|EEPROM|SD\.h|Wire|SPI|Audio)' firmware/src/engine firmware/src/sound
       - name: Generated kit headers match spec/kits (PRD §12 rule 6)
-        # Kits are data: the engine compiles a header generated from kit.json. Regenerate
-        # and diff so an edit to either side cannot hide.
+        # Kits are data: the engine compiles a header generated from each kit.json.
+        # Regenerate every kit and diff, so an edit to either side cannot hide; the
+        # intent-to-add makes a header that was never committed show up too.
         run: |
-          python3 tools/kit_builder.py spec/kits/lofi/kit.json firmware/src/engine/kits/lofi.h
+          for kit in spec/kits/*/kit.json; do
+            id="$(basename "$(dirname "$kit")")"
+            python3 tools/kit_builder.py "$kit" "firmware/src/engine/kits/$id.h"
+          done
+          git add -N firmware/src/engine/kits
           git diff --exit-code -- firmware/src/engine/kits
       - name: Install SDL2
         run: |
