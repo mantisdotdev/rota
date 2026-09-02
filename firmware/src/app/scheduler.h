@@ -41,7 +41,9 @@ class Scheduler {
   // its position plus the lookahead.
   void tick(Model& model, AudioPath& audio);
 
-  // Where the playhead is at `position`, as a fraction of the cycle; 0 when stopped.
+  // Where the playhead is at `position`, as a fraction of the cycle the audio is
+  // in; 0 when stopped. The scheduler itself runs up to the lookahead ahead of the
+  // audio, so just after it crosses into a cycle the audio is still in the last one.
   engine::Fraction playhead(int64_t position) const;
   uint32_t cycle_index() const { return cycle_index_; }
 
@@ -64,6 +66,8 @@ class Scheduler {
   int beat_frames_;
   int beat_in_cycle_;
   uint32_t cycle_index_;
+  int64_t previous_cycle_start_;   // the cycle before this one, for the audio still inside it
+  int64_t previous_cycle_frames_;  // 0 until a cycle has been crossed
   int64_t scheduled_until_;  // every hit before this sample has been handed over
   int64_t next_roll_;        // the next 1/16 grid point the roll has not covered
   int next_roll_track_;      // the first pad of that grid point not yet handed over

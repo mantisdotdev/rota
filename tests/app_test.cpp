@@ -344,8 +344,8 @@ TEST_CASE("T-83 The audio clock carries on past the 32-bit block count") {
       }
       audio->render(left, right);
       const engine::Fraction now = scheduler.playhead(audio->position());
-      if (audio->position() <= cycle_start + kCycleFrames) {
-        CHECK(now >= playhead);  // the ring's playhead never runs backwards across the wrap
+      if (audio->position() < cycle_start + kCycleFrames) {  // inside cycle 0, wrap included
+        CHECK(now >= playhead);  // the ring's playhead never runs backwards, not even at a beat
         playhead = now;
       }
       app::Fired hit;

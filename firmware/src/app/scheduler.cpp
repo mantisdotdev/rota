@@ -33,6 +33,8 @@ Scheduler::Scheduler(const engine::Kit& kit)
       beat_frames_(frames_of_beat(engine::kDefaultBpm)),
       beat_in_cycle_(0),
       cycle_index_(0),
+      previous_cycle_start_(0),
+      previous_cycle_frames_(0),
       scheduled_until_(0),
       next_roll_(0),
       next_roll_track_(0),
@@ -76,6 +78,12 @@ void Scheduler::tick(Model& model, AudioPath& audio) {
 // becomes this beat's pattern, its bpm this beat's length, and its events are asked
 // for again with the same cycle index, which rolls the same dice (D-034).
 void Scheduler::begin_beat(Model& model, int64_t at, bool first, AudioPath& audio) {
+  if (first) {
+    previous_cycle_frames_ = 0;
+  } else if (beat_in_cycle_ == kBeatsPerCycle - 1) {  // the cycle ending here, kept for the playhead
+    previous_cycle_start_ = beat_start_ - static_cast<int64_t>(beat_in_cycle_) * beat_frames_;
+    previous_cycle_frames_ = static_cast<int64_t>(kBeatsPerCycle) * beat_frames_;
+  }
   beat_start_ = at;
   next_roll_ = at;
   next_roll_track_ = 0;
@@ -164,9 +172,15 @@ int64_t Scheduler::sample_of(engine::Fraction time) const {
   return cycle_start + (static_cast<int64_t>(time.num) * cycle_frames) / time.den;
 }
 
+// A sample before this cycle's start belongs to the cycle before, which the audio
+// is still playing while the scheduler works ahead of it.
 engine::Fraction Scheduler::fraction_of(int64_t sample) const {
-  const int64_t cycle_start = beat_start_ - static_cast<int64_t>(beat_in_cycle_) * beat_frames_;
-  const int64_t cycle_frames = static_cast<int64_t>(kBeatsPerCycle) * beat_frames_;
+  int64_t cycle_start = beat_start_ - static_cast<int64_t>(beat_in_cycle_) * beat_frames_;
+  int64_t cycle_frames = static_cast<int64_t>(kBeatsPerCycle) * beat_frames_;
+  if (sample < cycle_start && previous_cycle_frames_ > 0) {
+    cycle_start = previous_cycle_start_;
+    cycle_frames = previous_cycle_frames_;
+  }
   int64_t within = sample - cycle_start;
   if (within < 0) within = 0;
   if (within >= cycle_frames) within = cycle_frames - 1;
@@ -174,7 +188,7 @@ engine::Fraction Scheduler::fraction_of(int64_t sample) const {
 }
 
 engine::Fraction Scheduler::playhead(int64_t position) const {
-  if (!running_ || position < beat_start_) return engine::Fraction{0, 1};
+  if (!running_) return engine::Fraction{0, 1};
   return fraction_of(position);
 }
 
