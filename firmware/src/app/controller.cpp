@@ -222,6 +222,7 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
     case hal::Button::undo:
       if (model.view == View::song) {
         if (model.arrangement.length > 0) model.arrangement.length -= 1;
+        if (model.arrangement.length == 0) leave_song(model, at_us, "song is empty");
         return;
       }
       if (section.undo_levels() == 0) {
@@ -270,7 +271,7 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model) {
     case hal::Button::dice:
       if (model.view == View::song) {
         model.arrangement.length = 0;
-        say(model, at_us, kStatusUs, "song cleared");
+        leave_song(model, at_us, "song cleared");
         return;
       }
       engine::dice_replace_all(section, *kit_, dice_.next());
@@ -337,20 +338,26 @@ void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, 
     return;
   }
   if (model.transport) {
-    model.transport = false;
-    model.song_mode = false;
-    model.song_start_pending = false;
-    model.pending_section = kNoSection;
-    model.roll = false;
-    if (model.playing != model.current) {
-      model.playing = model.current;
-      publish_params(model, audio);
-    }
-    scheduler.stop();
+    stop_transport(model, scheduler, audio);
     return;
   }
   model.transport = true;
   scheduler.start(model, audio.position(), audio.params);
+}
+
+// Stop leaves nothing pending: no song, no switch, no roll (T-81).
+void Controller::stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio) {
+  model.transport = false;
+  model.song_mode = false;
+  model.song_start_pending = false;
+  model.song_position = 0;
+  model.pending_section = kNoSection;
+  model.roll = false;
+  if (model.playing != model.current) {
+    model.playing = model.current;
+    publish_params(model, audio);
+  }
+  scheduler.stop();
 }
 
 void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
@@ -359,9 +366,7 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
     return;
   }
   if (model.transport && model.song_mode) {  // play again stops it
-    model.transport = false;
-    model.song_mode = false;
-    scheduler.stop();
+    stop_transport(model, scheduler, audio);
     return;
   }
   model.song_start_pending = true;
@@ -370,6 +375,15 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
     model.transport = true;
     scheduler.start(model, audio.position(), audio.params);
   }
+}
+
+// The arrangement emptied under a playing song: song play ends at once and the
+// section that was playing plays on live (T-81).
+void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
+  model.song_mode = false;
+  model.song_start_pending = false;
+  model.song_position = 0;
+  say(model, at_us, kStatusUs, "%s", status);
 }
 
 // Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob

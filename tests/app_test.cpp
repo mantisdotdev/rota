@@ -1,6 +1,6 @@
 // The app under the scripted input harness (tests/app_support.h): the scheduler,
 // the input grammar and the audio path together, on a fake HAL with a fake clock.
-// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79.
+// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81.
 #include <string>
 
 #include "app_support.h"
@@ -246,4 +246,39 @@ TEST_CASE("T-80 A knob turned while a section switch is pending is heard at once
     CHECK(w.state(0).fx == 3);
     CHECK(w.state(1).fx == 2);
   }
+}
+
+TEST_CASE("T-81 Emptying the arrangement under a playing song ends song play without a stumble") {
+  World w;
+  w.tap(Pad::kick);  // A: kick at 0; B stays empty
+  w.press(Button::show);
+  w.press(Button::show);
+  for (char letter : std::string("AAB")) w.press(section(letter));
+  w.play();
+  w.run_until(w.at(1, engine::Fraction{1, 2}));
+  REQUIRE(w.model().song_mode);
+
+  SUBCASE("undo removes the letters one by one") {
+    w.press(Button::undo);
+    w.press(Button::undo);
+    CHECK(w.model().arrangement.length == 1);
+    CHECK(w.model().song_mode);
+    w.press(Button::undo);  // the last letter goes
+    CHECK(w.model().arrangement.length == 0);
+    CHECK(w.status() == "song is empty");
+  }
+  SUBCASE("hold dice clears them at once") {
+    w.hold(Button::dice);
+    CHECK(w.model().arrangement.length == 0);
+    CHECK(w.status() == "song cleared");
+  }
+  CHECK_FALSE(w.model().song_mode);
+  CHECK(w.model().transport);
+  w.run_until(w.cycle_start(4));  // two more cycle boundaries: A plays on live
+  CHECK(w.model().playing == 0);
+  CHECK(w.times_in_cycle(Pad::kick, 3) == "0");
+
+  w.press(Button::play);  // in the song view with nothing to play
+  CHECK(w.status() == "song is empty");
+  CHECK(w.model().transport);
 }

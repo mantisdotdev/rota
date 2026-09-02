@@ -54,7 +54,9 @@ class Controller {
   void button_hold(hal::Button button, uint64_t at_us, Model& model);
   void section_press(int target, uint64_t at_us, Model& model, AudioPath& audio);
   void play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void leave_song(Model& model, uint64_t at_us, const char* status);
   void encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio);
   void track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model, engine::Section& section);
   void global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, engine::Section& section);

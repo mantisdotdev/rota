@@ -89,6 +89,10 @@ void Scheduler::begin_beat(Model& model, int64_t at, bool first, Mailbox<sound::
 
 // A cycle boundary: where sections switch and the song steps (§6.8, T-17, T-39).
 void Scheduler::cross_cycle(Model& model, bool first) {
+  if (model.song_mode && model.arrangement.length == 0) {  // emptied under a playing song (T-81)
+    model.song_mode = false;
+    model.song_position = 0;
+  }
   if (model.song_start_pending) {
     model.song_start_pending = false;
     model.song_mode = model.arrangement.length > 0;
