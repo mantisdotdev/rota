@@ -23,7 +23,7 @@ Run these exact commands. Do not invent substitutes or add flags.
 - Test all: `./build/tests`
 - Test one suite: `./build/tests -tc="<test case name>"`
 - Run simulator: `./build/simulator`
-- Render a code to WAV: `./build/render "<share code>" out/<name>.wav`
+- Render a code to WAV: `./build/render "<share code>" <cycles> out/<name>.wav`
 - Never run: `pio run -t upload`, `pio device monitor`, or anything that flashes or talks to a real device. Never run a command that needs sudo.
 
 A task is not finished until the relevant command has run in this session, or you have said why it could not.
