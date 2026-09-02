@@ -211,3 +211,39 @@ TEST_CASE("T-79 The audio callback and the scheduler allocate nothing under the 
   CHECK(w.audio_allocations == 0);
   CHECK(w.timer_allocations == 0);
 }
+
+TEST_CASE("T-80 A knob turned while a section switch is pending is heard at once") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.play();
+  w.run_until(w.at(0, engine::Fraction{3, 10}));
+  w.press(section('B'));  // a copy of A; the switch waits for the cycle boundary
+  REQUIRE(w.model().playing == 0);
+  REQUIRE(w.model().current == 1);
+
+  w.turn(Encoder::filter, -1);
+  CHECK(w.state(0).filter == 9);  // A, still playing, changes now
+  CHECK(w.state(1).filter == 9);  // B, waiting, carries the same value
+  CHECK(w.status() == "filter 0.9");
+
+  w.pad_down(Pad::hat);
+  w.turn(Encoder::volume, -1);
+  w.pad_up(Pad::hat);
+  CHECK(engine::track_of(w.state(0), Pad::hat).level == 7);
+  CHECK(engine::track_of(w.state(1), Pad::hat).level == 7);
+  CHECK(w.status() == "hat level 0.7");
+  CHECK(w.model().master_volume == app::kDefaultMasterVolume);  // the pad took the volume control
+
+  w.run_until(w.cycle_start(1) + kBlock);
+  CHECK(w.model().playing == 1);
+  CHECK(w.state(1).filter == 9);  // nothing jumps when B starts
+
+  SUBCASE("with no switch pending only the current section changes") {
+    w.press(section('A'));
+    w.run_until(w.cycle_start(2) + kBlock);
+    REQUIRE(w.model().playing == 0);
+    w.turn(Encoder::fx, 1);
+    CHECK(w.state(0).fx == 3);
+    CHECK(w.state(1).fx == 2);
+  }
+}

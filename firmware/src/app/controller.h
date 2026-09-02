@@ -56,8 +56,8 @@ class Controller {
   void play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio);
-  void track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model);
-  void global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model);
+  void track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model, engine::Section& section);
+  void global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, engine::Section& section);
   void apply_armed(int pad, uint64_t at_us, Model& model);
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);

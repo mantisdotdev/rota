@@ -37,7 +37,7 @@ struct Model {
   engine::Section sections[engine::kSectionCount];
   int current;          // what the player edits and sees
   int playing;          // what the scheduler plays; equals current except between a
-                        // section press and the next cycle boundary (D-086)
+                        // section press and the next cycle boundary, when a knob turns both (D-086)
   int pending_section;  // kNoSection, or where `playing` moves at the next cycle boundary
   Arrangement arrangement;
   bool song_mode;           // stepping through the arrangement (§6.8)

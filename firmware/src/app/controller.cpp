@@ -372,24 +372,30 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
   }
 }
 
-// Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone.
+// Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob
+// is heard the moment it moves, so while a switch is pending it turns on the playing
+// section and on the section waiting to play alike (D-086, revisited 2026-09-03).
 
 void Controller::encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio) {
   if (detents == 0) return;
-  if (any_pad_held()) {
-    for (int pad = 0; pad < engine::kTrackCount; ++pad) {
-      if (!pads_[pad].down) continue;
-      pads_[pad].used = true;
-      track_knob(encoder, pad, detents, at_us, model);
+  const bool pending = model.playing != model.current;
+  for (int pass = pending ? 0 : 1; pass < 2; ++pass) {
+    engine::Section& section = model.sections[pass == 0 ? model.playing : model.current];
+    if (any_pad_held()) {
+      for (int pad = 0; pad < engine::kTrackCount; ++pad) {
+        if (!pads_[pad].down) continue;
+        pads_[pad].used = true;
+        track_knob(encoder, pad, detents, at_us, model, section);
+      }
+    } else {
+      global_knob(encoder, detents, at_us, model, section);
     }
-  } else {
-    global_knob(encoder, detents, at_us, model);
   }
   publish_params(model, audio);
 }
 
-void Controller::track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model) {
-  engine::Section& section = model.sections[model.current];
+void Controller::track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model,
+                            engine::Section& section) {
   const engine::Pad which = engine::pad_at(pad);
   const char* name = engine::pad_of(*kit_, which).name;
   engine::Track& track = engine::track_of(section.state(), which);
@@ -419,8 +425,9 @@ void Controller::track_knob(hal::Encoder encoder, int pad, int detents, uint64_t
   }
 }
 
-void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model) {
-  engine::State& state = model.sections[model.current].state();
+void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model,
+                             engine::Section& section) {
+  engine::State& state = section.state();
   switch (encoder) {
     case hal::Encoder::speed: {
       int bpm = static_cast<int>(state.bpm) + detents * kBpmPerDetent;
@@ -443,6 +450,7 @@ void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, 
       say(model, at_us, kKnobStatusUs, "chance %d.%d", state.chance / 10, state.chance % 10);
       return;
     case hal::Encoder::volume:
+      if (&section != &model.sections[model.current]) return;  // the master is the app's, set once
       model.master_volume = nudged(model.master_volume, detents);
       say(model, at_us, kKnobStatusUs, "volume %d.%d", model.master_volume / 10, model.master_volume % 10);
       return;
@@ -455,10 +463,8 @@ void Controller::set_mute(Model& model, int pad, bool mute) {
   for (int i = 0; i < engine::kSectionCount; ++i) model.sections[i].state().tracks[pad].mute = mute;
 }
 
-// The playing section is what is heard; a knob turned on a section waiting to
-// play is heard when it starts (D-086).
+// The playing section is what is heard (D-086).
 void Controller::publish_params(const Model& model, AudioPath& audio) {
-  if (model.current != model.playing) return;
   audio.params.publish(params_of(model.sections[model.playing].state(), *kit_, model.master_volume));
 }
 
