@@ -19,8 +19,9 @@ bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size
   if (file == nullptr) return false;
   const size_t read = std::fread(out, 1, capacity, file);
   const bool more = std::fgetc(file) != EOF;  // larger than the buffer
+  const bool failed = std::ferror(file) != 0;  // a read error, not the end
   std::fclose(file);
-  if (more) return false;
+  if (more || failed) return false;
   *size = static_cast<uint32_t>(read);
   return true;
 }
