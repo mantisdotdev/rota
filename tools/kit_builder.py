@@ -8,14 +8,16 @@ the header and fails on any diff, so the two cannot drift.
 
 The output is an aggregate initialiser for engine::Kit (engine/kit.h); field order
 here must match that struct. Every value is validated against the ranges in PRD §6
-and share-format §3 before anything is written. Sample conversion into the on-device
-format comes later with sound/.
+and share-format §3 before anything is written, and every sample pad's WAV in the
+kit folder is checked to be what sound/ plays: 16-bit 48 kHz mono PCM of at most two
+seconds (D-081). Sample conversion into the on-device format comes later with io/.
 """
 
 import json
 import math
 import os
 import sys
+import wave
 
 PAD_ORDER = ["kick", "snare", "hat", "clap", "bass", "chord", "pluck", "rim"]
 MODE_ORDER = ["minor", "major", "dorian", "pentatonic_minor", "pentatonic_major"]
@@ -25,6 +27,10 @@ MAX_NOTE_SEQUENCE_LENGTH = 8
 MAX_DICE_LOOPS = 4
 KIT_ID_MAX_LENGTH = 12
 KIT_ID_ALPHABET = set("abcdefghijklmnopqrstuvwxyz0123456789")
+SAMPLE_RATE = 48000  # sound/limits.h kSampleRate (§7.4)
+SAMPLE_WIDTH_BYTES = 2
+MAX_SAMPLE_SECONDS = 2  # D-081: three kits' samples must fit the player's 4 MB (D-019)
+MAX_SAMPLE_FRAMES = SAMPLE_RATE * MAX_SAMPLE_SECONDS
 REST_TOKEN = "~"
 EXACT_TENTHS_TOLERANCE = 1e-9
 
@@ -98,6 +104,28 @@ def degree_list(values, what):
     return values
 
 
+def validate_sample(kit_dir, source, what):
+    """The WAV a sample pad names must sit in the kit folder and be 16-bit 48 kHz mono
+    PCM, 1 to MAX_SAMPLE_FRAMES frames, so sound/ can play it as it is."""
+    if not isinstance(source, str) or not source or os.path.basename(source) != source:
+        raise KitError(f"{what}: source must be a file name inside the kit folder, got {source!r}")
+    path = os.path.join(kit_dir, source)
+    try:
+        with wave.open(path, "rb") as sample:
+            channels = sample.getnchannels()
+            width = sample.getsampwidth()
+            rate = sample.getframerate()
+            frames = sample.getnframes()
+    except (OSError, EOFError, wave.Error) as error:
+        raise KitError(f"{what}: {source}: {error}") from error
+    if (channels, width, rate) != (1, SAMPLE_WIDTH_BYTES, SAMPLE_RATE):
+        raise KitError(
+            f"{what}: {source} must be 16-bit {SAMPLE_RATE} Hz mono, got {width * 8}-bit {rate} Hz {channels} channel(s)"
+        )
+    if not 1 <= frames <= MAX_SAMPLE_FRAMES:
+        raise KitError(f"{what}: {source} must hold 1 to {MAX_SAMPLE_FRAMES} frames, got {frames}")
+
+
 def repo_relative(path):
     """POSIX path relative to the repository root, whatever the working directory or
     the argv spelling, so the header banner is byte-identical everywhere."""
@@ -121,13 +149,14 @@ def cpp_template(steps):
     return "{%d, {%s}}" % (len(steps), inner)
 
 
-def cpp_pad(pad, what):
+def cpp_pad(pad, kit_dir, what):
     name = pad.get("name")
     voice = pad.get("voice")
     if voice not in ("sample", "synth"):
         raise KitError(f"{what}: voice must be sample or synth, got {voice!r}")
     if voice == "sample":
         source = pad["source"]
+        validate_sample(kit_dir, source, what)
         pitch = exact_int(pad.get("pitch", 0), f"{what} pitch")
         start = finite_number(pad.get("start", 0), f"{what} start")
         decay = finite_number(pad.get("decay", 1.0), f"{what} decay")
@@ -175,7 +204,8 @@ def build_header(kit, source_path, output_path):
         raise KitError(f"a kit defines 1–{MAX_DICE_LOOPS} dice loops (D-028), got {len(dice_loops)}")
     sidechain = kit["sidechain"]
 
-    pad_lines = "\n".join(cpp_pad(pad, f"pad {pad.get('name')}") for pad in pads)
+    kit_dir = os.path.dirname(os.path.abspath(source_path))
+    pad_lines = "\n".join(cpp_pad(pad, kit_dir, f"pad {pad.get('name')}") for pad in pads)
     progression_items = ", ".join(
         cpp_degree_list(degree_list(progressions[mode], f"{mode} progression")) for mode in MODE_ORDER
     )
