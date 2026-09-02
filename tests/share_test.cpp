@@ -90,7 +90,7 @@ TEST_CASE("T-15 Encode -> decode -> encode any state") {
   }
 }
 
-TEST_CASE("Golden codes decode to the states their descriptions give") {
+TEST_CASE("T-15 Golden codes decode to the states their descriptions give") {
   SUBCASE("G-02 one kick at 0") {
     const State state = decoded(kGoldens[1].code);
     CHECK(steps_text(state, Pad::kick) == "0");
