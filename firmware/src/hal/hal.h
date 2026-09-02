@@ -63,7 +63,9 @@ void start_audio(AudioCallback callback);
 int audio_buffer_frames();
 
 // Starts a periodic timer; the callback runs off the main loop from then on. Once
-// per process: a later call replaces the callback and keeps the first period.
+// per process: a later call replaces the callback and keeps the first period. The
+// period is a whole number of milliseconds (the host's timer counts them); the app
+// asks for 2 ms (D-084).
 void start_timer(uint32_t period_us, TimerCallback callback);
 
 // Mutual exclusion between the main loop and the timer callback. Held for

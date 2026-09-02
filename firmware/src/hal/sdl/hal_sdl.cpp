@@ -4,6 +4,7 @@
 // are in their own files beside this one.
 #include <SDL.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -45,7 +46,7 @@ int selected_encoder_ = 0;
 uint64_t counter_start_ = 0;
 uint64_t counter_frequency_ = 1;
 bool quit_requested = false;
-hal::TimerCallback timer_callback_ = nullptr;
+std::atomic<hal::TimerCallback> timer_callback_{nullptr};  // read on SDL's timer thread
 SDL_TimerID timer_ = 0;
 
 [[noreturn]] void fail(const char* what) {
@@ -147,7 +148,8 @@ void on_event(const SDL_Event& event) {
 }
 
 Uint32 timer_trampoline(Uint32 interval, void* /*unused*/) {
-  if (timer_callback_ != nullptr) timer_callback_();
+  const hal::TimerCallback callback = timer_callback_.load(std::memory_order_acquire);
+  if (callback != nullptr) callback();
   return interval;
 }
 
@@ -203,10 +205,13 @@ int read_input(InputEvent* out, int capacity) {
 }
 
 void start_timer(uint32_t period_us, TimerCallback callback) {
-  timer_callback_ = callback;
+  timer_callback_.store(callback, std::memory_order_release);
   if (timer_ != 0) return;  // already ticking: the new callback is all that changes
-  const Uint32 period_ms = period_us < 1000 ? 1 : period_us / 1000;
-  timer_ = SDL_AddTimer(period_ms, timer_trampoline, nullptr);
+  if (period_us == 0 || period_us % 1000 != 0) {
+    std::fprintf(stderr, "hal/sdl: start_timer wants whole milliseconds, got %u us\n", static_cast<unsigned>(period_us));
+    std::exit(EXIT_FAILURE);
+  }
+  timer_ = SDL_AddTimer(period_us / 1000, timer_trampoline, nullptr);
   if (timer_ == 0) fail("SDL_AddTimer");
 }
 

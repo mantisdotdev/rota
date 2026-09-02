@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <IntervalTimer.h>
 
+#include <atomic>
+
 #include "hal/hal.h"
 #include "hal/teensy/teensy_internal.h"
 
@@ -23,11 +25,12 @@ struct ClockBase {
 ClockBase clock_base_{0, 0};
 
 IntervalTimer timer_;
-hal::TimerCallback timer_callback_ = nullptr;
+std::atomic<hal::TimerCallback> timer_callback_{nullptr};  // read in the timer's interrupt
 bool timer_started_ = false;
 
 void timer_trampoline() {
-  if (timer_callback_ != nullptr) timer_callback_();
+  const hal::TimerCallback callback = timer_callback_.load(std::memory_order_acquire);
+  if (callback != nullptr) callback();
 }
 
 }  // namespace
@@ -59,11 +62,11 @@ bool poll() {
 }
 
 void start_timer(uint32_t period_us, TimerCallback callback) {
-  timer_callback_ = callback;
+  timer_callback_.store(callback, std::memory_order_release);
   if (timer_started_) return;  // already ticking: the new callback is all that changes
-  timer_started_ = true;
   timer_.priority(kTimerPriority);
-  timer_.begin(timer_trampoline, period_us);
+  timer_started_ = timer_.begin(timer_trampoline, period_us);  // false: every hardware timer is taken
+  if (!timer_started_) Serial.println("hal/teensy: no hardware timer free for the scheduler");
 }
 
 // One core: keeping the timer's interrupt out is the whole lock. Inside that

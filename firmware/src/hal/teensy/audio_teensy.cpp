@@ -5,6 +5,8 @@
 #include <Arduino.h>
 #include <Audio.h>
 
+#include <atomic>
+
 #include "hal/hal.h"
 
 namespace {
@@ -20,7 +22,7 @@ constexpr int kOutputPipelineBlocks = 2;  // the I2S output's DMA ring holds two
 constexpr unsigned int kChipClkCtrl = 0x0004;
 constexpr unsigned int kSysFs48kMclk256Fs = 0x0008;
 
-hal::AudioCallback callback_ = nullptr;
+std::atomic<hal::AudioCallback> callback_{nullptr};  // read in the audio library's interrupt
 bool started_ = false;
 float left_[hal::kAudioBlockFrames];
 float right_[hal::kAudioBlockFrames];
@@ -37,7 +39,8 @@ class EngineSource : public AudioStream {
   EngineSource() : AudioStream(0, nullptr) {}
 
   void update() override {
-    if (callback_ == nullptr) return;
+    const hal::AudioCallback callback = callback_.load(std::memory_order_acquire);
+    if (callback == nullptr) return;
     audio_block_t* left = allocate();
     if (left == nullptr) return;
     audio_block_t* right = allocate();
@@ -45,7 +48,7 @@ class EngineSource : public AudioStream {
       release(left);
       return;
     }
-    callback_(left_, right_);
+    callback(left_, right_);
     for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
       left->data[i] = to_int16(left_[i]);
       right->data[i] = to_int16(right_[i]);
@@ -76,7 +79,7 @@ void start_audio(AudioCallback callback) {
   static_assert(AUDIO_BLOCK_SAMPLES == kAudioBlockFrames, "the audio library's block is the engine's block");
   static_assert(static_cast<int>(AUDIO_SAMPLE_RATE_EXACT) == kAudioSampleRate,
                 "platformio.ini must set AUDIO_SAMPLE_RATE_EXACT to 48000 (D-083)");
-  callback_ = callback;
+  callback_.store(callback, std::memory_order_release);
   if (started_) return;  // already running: the new callback is all that changes
   started_ = true;
   AudioMemory(kAudioMemoryBlocks);

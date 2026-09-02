@@ -3,8 +3,10 @@
 // of kAudioBlockFrames, with the remainder carried across calls.
 #include <SDL.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "hal/hal.h"
 
@@ -41,7 +43,7 @@ void request_device_block(int frames) {
 void request_device_block(int /*frames*/) {}
 #endif
 
-hal::AudioCallback audio_callback_ = nullptr;
+std::atomic<hal::AudioCallback> audio_callback_{nullptr};  // read on SDL's audio thread
 SDL_AudioDeviceID device_ = 0;
 int granted_frames_ = hal::kAudioBlockFrames;
 
@@ -50,11 +52,16 @@ float right_[hal::kAudioBlockFrames];
 int carried_ = 0;  // frames of left_/right_ rendered but not yet handed to the driver
 
 void fill(void* /*userdata*/, Uint8* stream, int length) {
+  const hal::AudioCallback callback = audio_callback_.load(std::memory_order_acquire);
+  if (callback == nullptr) {
+    std::memset(stream, 0, static_cast<size_t>(length));
+    return;
+  }
   float* out = reinterpret_cast<float*>(stream);
   int frames = length / static_cast<int>(sizeof(float) * kChannels);
   while (frames > 0) {
     if (carried_ == 0) {
-      audio_callback_(left_, right_);
+      callback(left_, right_);
       carried_ = hal::kAudioBlockFrames;
     }
     const int from = hal::kAudioBlockFrames - carried_;
@@ -73,7 +80,7 @@ void fill(void* /*userdata*/, Uint8* stream, int length) {
 namespace hal {
 
 void start_audio(AudioCallback callback) {
-  audio_callback_ = callback;
+  audio_callback_.store(callback, std::memory_order_release);
   if (device_ != 0) return;  // already open: the new callback is all that changes
   request_device_block(kAudioBlockFrames);
   SDL_AudioSpec want{};
