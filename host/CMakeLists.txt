@@ -38,13 +38,16 @@ target_include_directories(core PUBLIC "${FIRMWARE_SRC}")
 # that builds on the host also builds on the device.
 target_compile_options(core PRIVATE -fno-exceptions -fno-rtti)
 
-# hal_sdl: the host HAL (D-016). SDL2main is not needed on macOS or Linux.
+# hal_sdl: the host HAL (D-016). SDL2main is not needed on macOS or Linux. An object
+# library, not an archive: every HAL function must be in the binary whatever
+# references it, and GNU ld resolves archives in one pass in link order, which
+# left hal::start_audio undefined when core came after the archive.
 find_package(SDL2 REQUIRED CONFIG)
 file(GLOB_RECURSE HAL_SDL_SOURCES CONFIGURE_DEPENDS "${FIRMWARE_SRC}/hal/sdl/*.cpp")
 if(NOT HAL_SDL_SOURCES)
   message(FATAL_ERROR "No .cpp files under ${FIRMWARE_SRC}/hal/sdl")
 endif()
-add_library(hal_sdl STATIC ${HAL_SDL_SOURCES})
+add_library(hal_sdl OBJECT ${HAL_SDL_SOURCES})
 target_include_directories(hal_sdl PUBLIC "${FIRMWARE_SRC}")
 target_link_libraries(hal_sdl PUBLIC SDL2::SDL2)
 if(APPLE)
@@ -55,10 +58,8 @@ endif()
 target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard")
 
 # The simulator reads the kit's WAVs through the render tool's loader (host-only code).
-# hal_sdl comes after offline (and so after core): GNU ld resolves static archives in
-# one pass, and app/ inside core is what references the HAL's audio functions.
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
-target_link_libraries(simulator PRIVATE offline hal_sdl)
+target_link_libraries(simulator PRIVATE hal_sdl offline)
 
 # tests: doctest on the host. No SDL, so it runs headless in CI; tests/hal_fake.cpp
 # stands in for the HAL so app/ runs under a scripted clock.
