@@ -13,6 +13,12 @@ jobs:
         # engine/ and sound/ must compile anywhere: no Arduino, Teensy, SDL or hal/ includes (D-029).
         run: |
           ! grep -rnE '#include[[:space:]]*[<"](Arduino|SDL|hal/|WProgram|core_pins|imxrt|usb_|EEPROM|SD\.h|Wire|SPI|Audio)' firmware/src/engine firmware/src/sound
+      - name: Generated kit headers match spec/kits (PRD §12 rule 6)
+        # Kits are data: the engine compiles a header generated from kit.json. Regenerate
+        # and diff so an edit to either side cannot hide.
+        run: |
+          python3 tools/kit_builder.py spec/kits/lofi/kit.json firmware/src/engine/kits/lofi.h
+          git diff --exit-code -- firmware/src/engine/kits
       - name: Install SDL2
         run: |
           sudo apt-get update

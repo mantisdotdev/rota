@@ -64,6 +64,7 @@ Conventions: fractions are of one cycle; the default kit (lofi), C minor and 100
 | T-56 | In the song view tap pad 2 (empty), edit section B, tap pad 1, then power off and on (§6.8, D-030) | Song 2 becomes a copy of song 1 (four sections and arrangement) on the first tap; the edit lands in song 2 only; song 1 plays back unchanged; nothing was saved by hand and the state survives the power cycle. |
 | T-57 | Text view after chord ×4 in C minor and in C pentatonic minor (§9.2, D-031) | C minor shows `chord  Cm Ab Eb Bb`; C pentatonic minor shows `chord  C Bb Eb F`: a name is the root plus `m` for a minor triad and the root alone for any other chord. |
 | T-58 | Text view after chord ×4 in keys `cm`, `em`, `csm`, `dsm`, `gsdor`, and pluck ×3 in `cm` (§9.2, D-032) | `cm`: `Cm Ab Eb Bb`; `em`: `Em C G D`; `csm`: `C#m A E B` (C# minor, 4 sharps, beats Db minor, 8 flats); `dsm`: `Ebm Cb Gb Db` (6 sharps against 6 flats, tie → flats); `gsdor`: `Abm Db Gb Db` (Ab dorian, tie → flats); pluck in `cm`: `c5 eb5 g5`. The share code spells every one of these roots with `s`. |
+| T-59 | Share a loop that was loaded from a code carrying id `k9z2ab`, then load the shared code on a second device (§9.3, §10.2) | Open, io/ scope, session 7: see Open points. The engine encodes whatever lineage the state holds. |
 
 ## Watch in testing
 
@@ -73,4 +74,6 @@ Design bets with a known fallback. Observe them in usability round 1 (PRD §14, 
 
 ## Open points
 
-None. Everything open on 2026-09-02 was decided the same day: see D-018–D-032 in `DECISIONS.md`. A new gap goes here with its scenario ID until the PRD answers it.
+A new gap goes here with its scenario ID until the PRD answers it. Everything else open on 2026-09-02 was decided the same day: see D-018–D-042 in `DECISIONS.md`.
+
+- **T-59, lineage on share (io/, session 7).** §10.2 says the device generates a 6-char id for every loop that is shared and that loading a code stores its id as the child's lineage; `spec/share-format.md` §2 and §4 say `~id` names the loop this one was loaded from and is written only when the loop was loaded from a code that carried one. The two readings differ on what the share view writes after `~`: the shared loop's own fresh id (so the receiver's lineage names its parent, and every shared code carries an id) or the lineage the loop already holds (so a re-shared loop names its grandparent, and a loop made from scratch shares with no id). The engine encodes `State::lineage` as it stands; the id generator and the replace-on-share step are io/. Decide the reading, then fill T-59's expected column and add a golden code if the canonical form changes.
