@@ -1,0 +1,15 @@
+# Build outputs
+build/
+firmware/.pio/
+out/
+out/**/*.wav
+
+# Personal overrides (CLAUDE.md: personal taste goes in CLAUDE.local.md)
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Machine-local session memory (Remember plugin); never copied into the repo
+.remember/
+
+# OS files
+.DS_Store

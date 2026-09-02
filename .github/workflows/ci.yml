@@ -1,0 +1,45 @@
+# Runs the exact commands from CLAUDE.md on every push and pull request (D-017).
+# A green host build says nothing about the firmware, so both jobs run every time.
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  host-and-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Layer check (PRD §12 rule 1)
+        # engine/ and sound/ must compile anywhere: no Arduino, Teensy, SDL or hal/ includes (D-029).
+        run: |
+          ! grep -rnE '#include[[:space:]]*[<"](Arduino|SDL|hal/|WProgram|core_pins|imxrt|usb_|EEPROM|SD\.h|Wire|SPI|Audio)' firmware/src/engine firmware/src/sound
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+      - name: Configure host
+        run: cmake -S host -B build
+      - name: Build host (simulator, tests, tools)
+        run: cmake --build build
+      - name: Test all
+        run: ./build/tests
+      # Never run ./build/simulator here: it opens an SDL window.
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build firmware
+        run: pio run -d firmware -e teensy41
