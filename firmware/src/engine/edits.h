@@ -16,6 +16,10 @@ namespace engine {
 // the track is full (D-024); the caller reads is_full() for the status line.
 void tap(Section& section, Pad pad, const Kit& kit);
 
+// The position the next tap on a melodic pad takes (§8.4, D-036), so the app can
+// audition the step before the beat commits it (D-085). 0 on every other pad.
+uint8_t next_note_position(const State& state, Pad pad, const Kit& kit);
+
 // Hold pad + undo: removes the track's last step, hit or rest (§8.2).
 void remove_last_step(Section& section, Pad pad);
 
