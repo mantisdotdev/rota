@@ -16,6 +16,7 @@ seconds (D-081). Sample conversion into the on-device format comes later with io
 import json
 import math
 import os
+import re
 import sys
 import wave
 
@@ -31,6 +32,9 @@ SAMPLE_RATE = 48000  # sound/limits.h kSampleRate (§7.4)
 SAMPLE_WIDTH_BYTES = 2
 MAX_SAMPLE_SECONDS = 2  # D-081: three kits' samples must fit the player's 4 MB (D-019)
 MAX_SAMPLE_FRAMES = SAMPLE_RATE * MAX_SAMPLE_SECONDS
+# A sample's file name: letters, digits, `_` and `-`, then `.wav`. Nothing a path, a
+# shell, a C++ string literal or a file system could read another way (D-081).
+SAMPLE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\.wav")
 REST_TOKEN = "~"
 EXACT_TENTHS_TOLERANCE = 1e-9
 
@@ -104,23 +108,30 @@ def degree_list(values, what):
     return values
 
 
+def sample_file_name(source, what):
+    """A sample pad's source as the rule allows it: a bare `.wav` name inside the kit
+    folder, from the letters, digits, `_` and `-` that no path, C++ literal or file
+    system reads another way."""
+    if not isinstance(source, str) or not SAMPLE_NAME_PATTERN.fullmatch(source):
+        raise KitError(f"{what}: source must be a file name like kick.wav, letters, digits, _ and -, got {source!r}")
+    return source
+
+
 def validate_sample(kit_dir, source, what):
-    """The WAV a sample pad names must be a plain file in the kit folder (no path, no
-    link) and 16-bit 48 kHz mono PCM of 1 to MAX_SAMPLE_FRAMES frames, so sound/ can
-    play it as it is."""
-    if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
-        raise KitError(f"{what}: source must be a file name inside the kit folder, got {source!r}")
-    path = os.path.join(kit_dir, source)
-    if os.path.islink(path):
-        raise KitError(f"{what}: {source} is a link; a kit sample is a file inside the kit folder")
+    """The WAV a sample pad names must be a regular file in the kit folder (no path,
+    no link, no pipe) and 16-bit 48 kHz mono PCM of 1 to MAX_SAMPLE_FRAMES frames, so
+    sound/ can play it as it is."""
+    path = os.path.join(kit_dir, sample_file_name(source, what))
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise KitError(f"{what}: {source} must be a regular file inside the kit folder")
     try:
         with wave.open(path, "rb") as sample:
             channels = sample.getnchannels()
             width = sample.getsampwidth()
             rate = sample.getframerate()
             frames = sample.getnframes()
-    except (OSError, EOFError, ValueError, wave.Error) as error:  # ValueError: a NUL in the name
-        raise KitError(f"{what}: {source!r}: {error}") from error
+    except (OSError, EOFError, wave.Error) as error:
+        raise KitError(f"{what}: {source}: {error}") from error
     if (channels, width, rate) != (1, SAMPLE_WIDTH_BYTES, SAMPLE_RATE):
         raise KitError(
             f"{what}: {source} must be 16-bit {SAMPLE_RATE} Hz mono, got {width * 8}-bit {rate} Hz {channels} channel(s)"

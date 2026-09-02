@@ -18,6 +18,8 @@ import struct
 import sys
 import wave
 
+import kit_builder  # the kit format's rules live there; this tool only makes files that obey them
+
 SAMPLE_RATE = 48000
 INT16_MAX = 32767
 TWO_PI = 2.0 * math.pi
@@ -174,13 +176,14 @@ def main(argv):
         if name not in RECIPES:
             print(f"sample_generator: no recipe for a sample pad named {name!r}", file=sys.stderr)
             return EXIT_FAILED
-        source = pad.get("source")
-        if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
-            print(f"sample_generator: pad {name}: source must be a file name inside the kit folder, got {source!r}", file=sys.stderr)
+        try:
+            source = kit_builder.sample_file_name(pad.get("source"), f"pad {name}")
+        except kit_builder.KitError as error:
+            print(f"sample_generator: {error}", file=sys.stderr)
             return EXIT_FAILED
         destination = os.path.join(kit_dir, source)
-        if os.path.islink(destination) or os.path.isdir(destination):
-            print(f"sample_generator: pad {name}: {source} is a directory or a link; refusing to write over it", file=sys.stderr)
+        if os.path.lexists(destination) and (os.path.islink(destination) or not os.path.isfile(destination)):
+            print(f"sample_generator: pad {name}: {source} is not a regular file; refusing to write over it", file=sys.stderr)
             return EXIT_FAILED
     for pad in sample_pads:
         path = os.path.join(kit_dir, pad["source"])

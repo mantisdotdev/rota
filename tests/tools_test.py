@@ -108,18 +108,18 @@ class T76KitSamples(unittest.TestCase):
 
     def test_T76_the_generator_refuses_a_source_that_is_not_a_bare_file_name(self):
         # On the last sample pad, so a check that came after writing would have left files behind.
-        for source in ["../kick.wav", "sub/kick.wav", "", ".", "..", None]:
+        for source in ["../kick.wav", "sub/kick.wav", "", ".", "..", None, "kick.wav\n", "kick\r.wav", "kick.wav\0", "my kick.wav", ".kick.wav", "kick"]:
             self.kit["pads"][7]["source"] = source
             code, error = quiet(sample_generator.main, ["x", self.write_kit()])
             self.assertEqual(code, sample_generator.EXIT_FAILED, repr(source))
-            self.assertIn("source must be a file name inside the kit folder", error)
+            self.assertIn("source must be a file name like kick.wav", error)
             self.assertEqual(self.wavs_in_folder(), [], repr(source))
 
     def test_T76_the_generator_refuses_a_directory_or_a_link_at_a_source_before_writing_anything(self):
         os.mkdir(os.path.join(self.folder, "rim.wav"))  # the last sample pad
         code, error = quiet(sample_generator.main, ["x", self.write_kit()])
         self.assertEqual(code, sample_generator.EXIT_FAILED)
-        self.assertIn("rim.wav is a directory or a link", error)
+        self.assertIn("rim.wav is not a regular file", error)
         self.assertEqual(self.wavs_in_folder(), [])
         os.rmdir(os.path.join(self.folder, "rim.wav"))
         outside = os.path.join(self.folder, "..", "outside-" + os.path.basename(self.folder) + ".wav")
@@ -129,23 +129,33 @@ class T76KitSamples(unittest.TestCase):
         os.symlink(outside, os.path.join(self.folder, "rim.wav"))
         code, error = quiet(sample_generator.main, ["x", self.write_kit()])
         self.assertEqual(code, sample_generator.EXIT_FAILED)
-        self.assertIn("rim.wav is a directory or a link", error)
+        self.assertIn("rim.wav is not a regular file", error)
         self.assertEqual(self.wavs_in_folder(), [])
         with open(outside, "rb") as target:
             self.assertEqual(target.read(), b"untouched")
+        os.remove(os.path.join(self.folder, "rim.wav"))
+        os.mkfifo(os.path.join(self.folder, "rim.wav"))  # a pipe would block the write
+        code, error = quiet(sample_generator.main, ["x", self.write_kit()])
+        self.assertEqual(code, sample_generator.EXIT_FAILED)
+        self.assertIn("rim.wav is not a regular file", error)
+        self.assertEqual(self.wavs_in_folder(), [])
 
     def test_T76_the_builder_accepts_a_sample_of_exactly_two_seconds(self):
         write_wav(os.path.join(self.folder, "two.wav"), 1, SAMPLE_RATE, 2, MAX_SAMPLE_FRAMES)
         kit_builder.validate_sample(self.folder, "two.wav", "pad kick")  # no KitError
 
-    def test_T76_the_builder_refuses_a_linked_or_nul_carrying_source(self):
+    def test_T76_the_builder_refuses_a_linked_or_piped_source_and_a_name_outside_the_rule(self):
         os.symlink(os.path.join(os.path.dirname(LOFI_KIT), "kick.wav"), os.path.join(self.folder, "linked.wav"))
-        with self.assertRaises(kit_builder.KitError) as caught:
-            kit_builder.validate_sample(self.folder, "linked.wav", "pad kick")
-        self.assertIn("linked.wav is a link", str(caught.exception))
-        with self.assertRaises(kit_builder.KitError) as caught:
-            kit_builder.validate_sample(self.folder, "kick.wav\0", "pad kick")
-        self.assertIn("pad kick", str(caught.exception))
+        os.mkfifo(os.path.join(self.folder, "piped.wav"))  # opening it would block until a writer came
+        for source in ["linked.wav", "piped.wav"]:
+            with self.assertRaises(kit_builder.KitError) as caught:
+                kit_builder.validate_sample(self.folder, source, "pad kick")
+            self.assertIn(f"{source} must be a regular file", str(caught.exception))
+        for source in ["kick.wav\0", "kick.wav\n", "kick\r.wav", "my kick.wav", ".kick.wav", "kick", "kick.WAV", 7]:
+            with self.assertRaises(kit_builder.KitError, msg=repr(source)) as caught:
+                kit_builder.validate_sample(self.folder, source, "pad kick")
+            self.assertIn("source must be a file name like kick.wav", str(caught.exception))
+        self.assertEqual(kit_builder.sample_file_name("Kick-2_b.wav", "pad kick"), "Kick-2_b.wav")
 
     def test_T76_the_builder_accepts_the_kit_and_regenerates_the_checked_in_header(self):
         header = os.path.join(self.folder, "lofi.h")
@@ -169,10 +179,10 @@ class T76KitSamples(unittest.TestCase):
             "long.wav": "must hold 1 to 96000 frames, got 96001",
             "empty.wav": "must hold 1 to 96000 frames, got 0",
             "text.wav": "file does not start with RIFF id",
-            "missing.wav": "No such file",
-            "../lofi/kick.wav": "source must be a file name inside the kit folder",
-            ".": "source must be a file name inside the kit folder",
-            "..": "source must be a file name inside the kit folder",
+            "missing.wav": "must be a regular file",
+            "../lofi/kick.wav": "source must be a file name like kick.wav",
+            ".": "source must be a file name like kick.wav",
+            "..": "source must be a file name like kick.wav",
         }
         for source, reason in expected.items():
             with self.assertRaises(kit_builder.KitError, msg=source) as caught:
