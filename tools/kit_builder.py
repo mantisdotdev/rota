@@ -54,6 +54,14 @@ def hundredths(value, what):
     return int(rounded)
 
 
+def exact_int(value, what):
+    """A JSON integer. bool is an int subclass in Python, so isinstance would let
+    `true` through and the header would say True."""
+    if type(value) is not int:
+        raise KitError(f"{what} must be an integer, got {value!r}")
+    return value
+
+
 def template_steps(notation, what):
     """Mini-notation from PRD §6.6 (`~ sd ~ sd`) → (hits, note) pairs: `~` is a rest,
     any other token a single hit at position 0."""
@@ -67,8 +75,8 @@ def degree_list(values, what):
     if not 1 <= len(values) <= MAX_NOTE_SEQUENCE_LENGTH:
         raise KitError(f"{what} needs 1–{MAX_NOTE_SEQUENCE_LENGTH} degrees, got {values}")
     for degree in values:
-        if not isinstance(degree, int) or degree < 0:
-            raise KitError(f"{what}: degrees are non-negative integers, got {degree!r}")
+        if exact_int(degree, f"{what} degree") < 0:
+            raise KitError(f"{what}: degrees are non-negative, got {degree!r}")
     return values
 
 
@@ -96,14 +104,14 @@ def cpp_pad(pad, what):
         raise KitError(f"{what}: voice must be sample or synth, got {voice!r}")
     if voice == "sample":
         source = pad["source"]
-        pitch = int(pad.get("pitch", 0))
+        pitch = exact_int(pad.get("pitch", 0), f"{what} pitch")
         start = float(pad.get("start", 0))
         decay = float(pad.get("decay", 1.0))
         octave = 0
     else:
         source = pad["preset"]
         pitch, start, decay = 0, 0.0, 0.0
-        octave = int(pad["octave"])
+        octave = exact_int(pad["octave"], f"{what} octave")
     templates = pad.get("templates", [])
     if len(templates) > MAX_TAP_TEMPLATES:
         raise KitError(f"{what}: at most {MAX_TAP_TEMPLATES} templates, got {len(templates)}")
@@ -172,7 +180,7 @@ inline constexpr Kit {variable}{{
     {hundredths(kit["swing"], "swing")},
     {tenths(kit["filter"], "filter")},
     {tenths(kit["fx"], "fx")},
-    {{{"true" if sidechain["on"] else "false"}, {int(sidechain["duck_db"])}, {int(sidechain["release_ms"])}}},
+    {{{"true" if sidechain["on"] else "false"}, {exact_int(sidechain["duck_db"], "sidechain duck_db")}, {exact_int(sidechain["release_ms"], "sidechain release_ms")}}},
 }};
 
 }}  // namespace engine::kits
