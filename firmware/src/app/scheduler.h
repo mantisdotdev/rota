@@ -30,9 +30,11 @@ class Scheduler {
   // The session's seed for chance and humanize (D-034); set once at init.
   void set_seed(uint32_t seed);
 
-  // Transport: the first beat begins kStartDelayBlocks after the audio side's position.
+  // Transport: the first beat begins kStartDelayBlocks after the audio side's
+  // position. Both moves the generation on, so a stop drops the hits already
+  // handed over and a start plays only its own (T-82).
   void start(Model& model, AudioPath& audio);
-  void stop();
+  void stop(AudioPath& audio);
   bool running() const { return running_; }
 
   // From the timer, under hal::lock(): hands the audio side every hit due before
@@ -56,6 +58,7 @@ class Scheduler {
 
   const engine::Kit* kit_;
   uint32_t seed_;
+  uint32_t generation_;
   bool running_;
   int64_t beat_start_;
   int beat_frames_;

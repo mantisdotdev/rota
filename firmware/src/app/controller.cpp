@@ -360,7 +360,7 @@ void Controller::stop_transport(Model& model, Scheduler& scheduler, AudioPath& a
     model.playing = model.current;
     publish_params(model, audio);
   }
-  scheduler.stop();
+  scheduler.stop(audio);
 }
 
 void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {

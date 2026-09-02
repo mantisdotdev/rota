@@ -1,6 +1,6 @@
 // The app under the scripted input harness (tests/app_support.h): the scheduler,
 // the input grammar and the audio path together, on a fake HAL with a fake clock.
-// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81.
+// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82.
 #include <string>
 
 #include "app_support.h"
@@ -282,4 +282,20 @@ TEST_CASE("T-81 Emptying the arrangement under a playing song ends song play wit
   w.press(Button::play);  // in the song view with nothing to play
   CHECK(w.status() == "song is empty");
   CHECK(w.model().transport);
+}
+
+TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.play();
+  // Two blocks (5.3 ms) before the kick at 1/4, which the 10 ms lookahead has already handed over.
+  w.run_until(w.at(1, engine::Fraction{1, 4}) - 2 * kBlock);
+  w.press(Button::play);
+  CHECK_FALSE(w.model().transport);
+  w.run_for(8 * kBlock);
+  CHECK(w.times_in_cycle(Pad::kick, 1) == "0");  // the 1/4 hit never sounded
+
+  w.play();  // a fresh cycle whose hits all fire
+  w.run_until(w.cycle_start(1));
+  CHECK(w.times_in_cycle(Pad::kick, 0) == "0 1/4 1/2 3/4");
 }

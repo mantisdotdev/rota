@@ -14,6 +14,7 @@ AudioPath::AudioPath()
       immediate(),
       fired(),
       params(),
+      live_generation(0),
       engine_(nullptr),
       blocks_(0),
       latency_last_us_(0),
@@ -70,8 +71,10 @@ int AudioPath::collect(int64_t block_start, sound::Trigger* triggers) {
     fired.push(Fired{block_start, now.event, true});
   }
   ScheduledTrigger due;
+  const uint32_t live = live_generation.load(std::memory_order_acquire);
   while (count < kMaxTriggersPerBlock && scheduled.peek(due) && due.sample < block_start + sound::kBlockSize) {
     scheduled.drop();
+    if (due.generation != live) continue;  // handed over before a stop: never sounds (T-82)
     int offset = static_cast<int>(due.sample - block_start);
     if (offset < 0) offset = 0;
     triggers[count++] = sound::Trigger{due.event, offset};

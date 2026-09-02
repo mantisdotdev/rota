@@ -27,6 +27,7 @@ engine::State without_mutes(const engine::State& state) {
 Scheduler::Scheduler(const engine::Kit& kit)
     : kit_(&kit),
       seed_(0),
+      generation_(0),
       running_(false),
       beat_start_(0),
       beat_frames_(frames_of_beat(engine::kDefaultBpm)),
@@ -43,12 +44,18 @@ void Scheduler::set_seed(uint32_t seed) { seed_ = seed; }
 
 void Scheduler::start(Model& model, AudioPath& audio) {
   running_ = true;
+  generation_ += 1;
+  audio.live_generation.store(generation_, std::memory_order_release);
   const int64_t at = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
   scheduled_until_ = at;
   begin_beat(model, at, true, audio);
 }
 
-void Scheduler::stop() { running_ = false; }
+void Scheduler::stop(AudioPath& audio) {
+  running_ = false;
+  generation_ += 1;
+  audio.live_generation.store(generation_, std::memory_order_release);
+}
 
 void Scheduler::tick(Model& model, AudioPath& audio) {
   if (!running_) return;
@@ -123,7 +130,7 @@ bool Scheduler::push_window(const Model& model, int64_t until, TriggerQueue& out
     const int64_t sample = sample_of(event.time);
     if (sample >= until) break;
     if (!engine::track_of(held, event.track).mute) {
-      if (!out.push(ScheduledTrigger{sample, event})) return false;
+      if (!out.push(ScheduledTrigger{sample, generation_, event})) return false;
     }
     ++next_event_;
   }
@@ -134,7 +141,7 @@ bool Scheduler::push_window(const Model& model, int64_t until, TriggerQueue& out
       for (int i = next_roll_track_; i < engine::kTrackCount; ++i) {
         if (!held.tracks[i].mute) continue;
         const engine::Event event = audition(held, *kit_, engine::pad_at(i), root, fraction_of(next_roll_));
-        if (!out.push(ScheduledTrigger{next_roll_, event})) {
+        if (!out.push(ScheduledTrigger{next_roll_, generation_, event})) {
           next_roll_track_ = i;
           return false;
         }

@@ -16,8 +16,11 @@
 namespace app {
 
 // A hit the scheduler handed over, due at an absolute frame since the audio started.
+// It plays only if its generation is still the live one: a stop moves the
+// generation on, so hits already inside the lookahead never sound (T-82).
 struct ScheduledTrigger {
   int64_t sample;
+  uint32_t generation;
   engine::Event event;
 };
 
@@ -80,6 +83,7 @@ class AudioPath {
   SpscQueue<Immediate, kImmediateQueueCapacity> immediate;
   SpscQueue<Fired, kFiredQueueCapacity> fired;
   Mailbox<sound::Params> params;
+  std::atomic<uint32_t> live_generation;  // written by the scheduler at start and stop
 
  private:
   int collect(int64_t block_start, sound::Trigger* triggers);
