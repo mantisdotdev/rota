@@ -327,7 +327,7 @@ alt     e = every, a, b, f = fourth
 speed   h = 0.5, 1 = 1, d = 2
 steps   one char per step:
           '.'                       rest
-          base36[(hits-1)*8 + note] hit; hits 1–4, note 0–7 (a position in the kit's progression or note sequence, §8.4; 0 for drums and bass)
+          base36[(hits-1)*8 + note] hit; hits 1–4, note 0–7 (a position in the kit's progression or note sequence, §8.4; the device writes 0 on drums and bass, and a decoder accepts and keeps any value there)
 ```
 Optional per-track modifiers (level/tone/send/chance) are appended after a `,` as four base36 tenths, omitted when default.
 

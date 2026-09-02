@@ -42,7 +42,7 @@ Roots are written with sharps only (`as`, never a flat), and the sharp is the le
 | steps | 0–16 characters, one per step, in order | `.` = rest; otherwise base36 of `(hits − 1) × 8 + note`, with hits 1–4 and note 0–7 |
 | modifiers | `,` + four base36 tenths | level, tone, send, chance; see §3 |
 
-`note` is a position in the kit's chord progression (chord pad) or note sequence (pluck pad), 0–7 (D-020). Drums and bass always carry note 0; the bass pitch is resolved at play time from the active chord (§6.4). A position past the end of the kit's list plays position mod length and is stored and re-encoded unchanged (T-47).
+`note` is a position in the kit's chord progression (chord pad) or note sequence (pluck pad), 0–7 (D-020). Codes the device writes carry note 0 on drums and bass, whose pitch never comes from it: the bass is resolved at play time from the active chord (§6.4). A decoder accepts note 0–7 on every track, ignores it on drums and bass, and re-encodes it unchanged (D-039), which is how G-14 carries `v` on the bass and still round-trips. A position past the end of the kit's list plays position mod length and is stored and re-encoded unchanged (T-47).
 
 An empty track is `<alt><speed>` with no step characters, e.g. `e1`. `-` never appears inside a track string, so the track separator is unambiguous.
 
