@@ -42,6 +42,7 @@ How the EVT breadboard unit (hardware/BOM.md, Table 1) connects to the Teensy 4.
 - Display: 30 MHz SPI, which is ILI9341_T4's default and what its author runs this controller at (the library reports about 45 full frames a second at 60 MHz; BOM, "Noticed while researching"); the ILI9341 datasheet's 100 ns write cycle is 10 MHz, at which a full frame takes 120 ms, so the bring-up test decides and 10 MHz is the fallback if the image tears or shifts. Rotation 1 (landscape; try 3 if the image is upside down), 60 Hz refresh, vsync spacing 1, diff gap 4.
 - Memory (D-089): RAM2 holds the sound engine (207 KB), the model with its four sections and undo (85 KB) and the display driver's copy of the screen (150 KB), 460 KB in all with 64 KB spare; RAM1 holds the app's framebuffer (150 KB), the scheduler's event list (30 KB), the queues and the driver's two 6 KB diff buffers, 275 KB of variables beside 141 KB of code, leaving 85 KB for the stack. Two framebuffers in RAM2 overflowed it by 4.7 KB and the framebuffer in RAM1 with the model left 128 bytes of stack, so this split is the one that links; the `teensy_size` line of `pio run` is the check.
 - Scheduler timer: an IntervalTimer every 2 ms at NVIC priority 224, under the audio library's update at 208.
+- Audio output pipeline: the latency line assumes the I2S output holds two 128-frame blocks between the callback and the codec (`kOutputPipelineBlocks` in `audio_teensy.cpp`), unverified until bring-up measures it.
 
 ## Not wired this session
 
