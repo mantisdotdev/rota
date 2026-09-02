@@ -55,8 +55,10 @@ endif()
 target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard")
 
 # The simulator reads the kit's WAVs through the render tool's loader (host-only code).
+# hal_sdl comes after offline (and so after core): GNU ld resolves static archives in
+# one pass, and app/ inside core is what references the HAL's audio functions.
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
-target_link_libraries(simulator PRIVATE hal_sdl offline)
+target_link_libraries(simulator PRIVATE offline hal_sdl)
 
 # tests: doctest on the host. No SDL, so it runs headless in CI; tests/hal_fake.cpp
 # stands in for the HAL so app/ runs under a scripted clock.
