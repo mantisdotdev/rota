@@ -13,8 +13,8 @@
 // release; a pad held is muted and turns every knob and button into its per-track
 // version (§8.1); round and section buttons act on a short release and do their
 // hold meaning once the hold passes 300 ms. The views' gestures live here too:
-// show's hold and undo + show (§9.3, §9.4) and the settings rows (D-096).
-// Everything here runs on the main loop under
+// show's hold and undo + show (§9.3, §9.4), the settings rows (D-096) and the
+// tutorial's steps (§8.5, D-097). Everything here runs on the main loop under
 // hal::lock(), and writes the model that the scheduler reads on the beat.
 namespace app {
 
@@ -70,6 +70,11 @@ class Controller {
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);
   bool any_pad_held() const;
+
+  // The tutorial waits for one gesture per step (§8.5); the rest is ignored.
+  enum class TutorialEvent : uint8_t { kick_tap, snare_tap, chance_turn, share_opened, song_started };
+  void tutorial_saw(Model& model, TutorialEvent event, uint64_t at_us);
+  void end_tutorial(Model& model, uint64_t at_us, const char* status);
 
 #if defined(__GNUC__)
   __attribute__((format(printf, 5, 6)))  // `this` is argument 1

@@ -19,6 +19,7 @@ Model::Model(const engine::Kit& kit)
       status{{}, 0, 0},
       knob{{}, 0, 0},
       settings{0, kDefaultBrightness, kDefaultSleepMinutes, true, true, true, true},
+      tutorial{false, 0, false},
       master_volume(kDefaultMasterVolume) {}
 
 bool is_empty(const engine::State& state) {

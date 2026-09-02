@@ -19,6 +19,7 @@
 #include "ui/share.h"
 #include "ui/song.h"
 #include "ui/text.h"
+#include "ui/tutorial.h"
 
 namespace app {
 
@@ -36,6 +37,8 @@ constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
+constexpr uint8_t kTutorialDone = '1';
+constexpr uint8_t kTutorialPending = '0';
 
 const engine::Kit& kit = engine::kits::kLofi;
 
@@ -75,6 +78,7 @@ struct Frame {
   int current;
   int playing;
   Settings settings;
+  Tutorial tutorial;
   int armed;
   engine::Fraction playhead;
   uint32_t cycle_index;
@@ -221,11 +225,18 @@ void draw(uint64_t now_us) {
   frame.current = the_model.current;
   frame.playing = the_model.playing;
   frame.settings = the_model.settings;
+  frame.tutorial = the_model.tutorial;
   frame.armed = controller.armed();
   hal::unlock();
 
-  // Every view lays out above the overlay's rows (Appendix D).
+  // The prompt rows are reserved while the tutorial runs, except in settings, which
+  // the tutorial does not narrate; every view lays out above them (Appendix D).
   ui::Overlay overlay{};
+  if (frame.tutorial.active && frame.view != View::settings) {
+    const ui::Prompt& prompt = ui::tutorial_prompt(frame.tutorial.step);
+    overlay.prompt = prompt.lines;
+    overlay.prompt_count = prompt.count;
+  }
   const int bottom = ui::content_bottom(overlay.prompt_count);
   uint16_t* framebuffer = hal::framebuffer();
   switch (frame.view) {
@@ -282,12 +293,21 @@ void light_leds(int64_t position, const engine::State& state) {
   hal::show_leds();
 }
 
+// First boot, or not: one byte on the card (D-097). Read before the lock, since
+// the card is slow and the timer may already tick.
+bool tutorial_done() {
+  uint8_t flag = 0;
+  uint32_t size = 0;
+  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) && size == 1 && flag == kTutorialDone;
+}
+
 }  // namespace
 
 // Builds everything afresh, so the tests can start over as often as they like; on
 // the device it runs once. Placement new is construction in place, not heap
 // allocation, and it keeps an 85 KB model off the stack.
 void init(const sound::SampleBank& samples) {
+  const bool first_run = !tutorial_done();
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(kit);
@@ -300,6 +320,7 @@ void init(const sound::SampleBank& samples) {
   worst_tick_gap_us = 0;
   shown_code.text[0] = '\0';
   applied_brightness = -1;
+  the_model.tutorial = Tutorial{first_run, 0, false};
   audio.init(sound_engine, kit, samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);
@@ -317,10 +338,18 @@ void tick() {
   last_tick_us = now_us;
   hal::InputEvent events[kInputBatch];
   const int count = hal::read_input(events, kInputBatch);
+  bool save_tutorial = false;
+  uint8_t tutorial_flag = kTutorialDone;
   hal::lock();
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   controller.tick(now_us, the_model, scheduler, audio);
+  if (the_model.tutorial.save_pending) {  // written below, outside the lock: the card is slow
+    the_model.tutorial.save_pending = false;
+    save_tutorial = true;
+    tutorial_flag = the_model.tutorial.active ? kTutorialPending : kTutorialDone;
+  }
   hal::unlock();
+  if (save_tutorial) hal::write_file(kTutorialDoneFile, &tutorial_flag, 1);
 
   Fired fired;
   while (audio.fired.pop(fired)) the_fired_log.append(fired);

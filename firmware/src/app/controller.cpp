@@ -9,6 +9,7 @@
 #include "engine/edits.h"
 #include "sound/limits.h"
 #include "ui/settings.h"
+#include "ui/tutorial.h"
 
 namespace app {
 
@@ -29,6 +30,8 @@ constexpr int kSleepChoiceCount = 6;
 const char* const kPlural[engine::kTrackCount] = {"kicks", "snares", "hats", "claps", "basses", "chords", "plucks", "rims"};
 const char* const kSpeedText[] = {"0.5", "1", "2"};
 const char* const kAltText[] = {"every cycle", "takes turns", "takes turns, late", "every fourth"};
+const char* const kTutorialDone = "that's a song";
+const char* const kTutorialSkipped = "tutorial skipped";
 
 int hit_count(const engine::Track& track) {
   int count = 0;
@@ -160,6 +163,8 @@ void Controller::pad_tap(int pad, uint64_t at_us, Model& model) {
   } else {
     say(model, at_us, kStatusUs, "%d %s, spread evenly", hits, kPlural[pad]);
   }
+  if (which == engine::Pad::kick) tutorial_saw(model, TutorialEvent::kick_tap, at_us);
+  if (which == engine::Pad::snare) tutorial_saw(model, TutorialEvent::snare_tap, at_us);
 }
 
 void Controller::apply_armed(int pad, uint64_t at_us, Model& model) {
@@ -331,6 +336,7 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model, S
         return;
       }
       model.view = View::share;  // §9.3; stays open after the release (D-093)
+      tutorial_saw(model, TutorialEvent::share_opened, at_us);
       return;
     case hal::Button::play:
       if (model.view == View::settings && model.settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
@@ -386,7 +392,8 @@ void Controller::section_press(int target, uint64_t at_us, Model& model, AudioPa
 }
 
 // Play (§8.2, D-030): play or stop; with a section held, or in the song view, the
-// song from the top. In settings it runs the selected row (D-096).
+// song from the top. In settings it runs the selected row (D-096). During the
+// tutorial a press that does not start the song skips it (§8.5, D-097).
 void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   bool section_held = false;
   for (int i = static_cast<int>(hal::Button::section_a); i < hal::kButtonCount; ++i) {
@@ -400,6 +407,10 @@ void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, 
     return;
   }
   const bool song_gesture = section_held || model.view == View::song;
+  if (model.tutorial.active && !(song_gesture && model.arrangement.length > 0)) {
+    end_tutorial(model, at_us, kTutorialSkipped);
+    return;
+  }
   if (song_gesture) {
     start_song(at_us, model, scheduler, audio);
     return;
@@ -442,6 +453,7 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
     model.transport = true;
     scheduler.start(model, audio);
   }
+  tutorial_saw(model, TutorialEvent::song_started, at_us);
 }
 
 // The arrangement emptied under a playing song: song play ends at once and the
@@ -479,6 +491,7 @@ void Controller::encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us,
     }
   }
   publish_params(model, audio);
+  if (encoder == hal::Encoder::chance) tutorial_saw(model, TutorialEvent::chance_turn, at_us);
 }
 
 void Controller::track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model,
@@ -617,6 +630,8 @@ void Controller::settings_turn(hal::Encoder encoder, int detents, Model& model) 
 void Controller::settings_play(uint64_t at_us, Model& model) {
   switch (static_cast<ui::SettingsRow>(model.settings.cursor)) {
     case ui::SettingsRow::run_tutorial:
+      model.tutorial = Tutorial{true, 0, false};
+      model.view = View::ring;
       return;
     case ui::SettingsRow::factory_reset:
       say(model, at_us, kStatusUs, "hold play to reset");
@@ -626,14 +641,33 @@ void Controller::settings_play(uint64_t at_us, Model& model) {
   }
 }
 
-// Back to the power-on state (D-096). Rebuilt in place, so nothing the size of the
-// model touches the stack.
+// Back to the power-on state, the tutorial included (D-096). Rebuilt in place, so
+// nothing the size of the model touches the stack.
 void Controller::factory_reset(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   if (model.transport) stop_transport(model, scheduler, audio);
   new (&model) Model(*kit_);
+  model.tutorial = Tutorial{true, 0, true};
   armed_ = kNoButton;
   publish_params(model, audio);
   say(model, at_us, kStatusUs, "reset");
+}
+
+// The tutorial (§8.5, D-097): each step waits for its gesture and ignores the rest.
+void Controller::tutorial_saw(Model& model, TutorialEvent event, uint64_t at_us) {
+  static const TutorialEvent kExpected[ui::kTutorialSteps] = {
+      TutorialEvent::kick_tap,    TutorialEvent::kick_tap,      TutorialEvent::snare_tap,
+      TutorialEvent::chance_turn, TutorialEvent::share_opened, TutorialEvent::song_started,
+  };
+  if (!model.tutorial.active || event != kExpected[model.tutorial.step]) return;
+  model.tutorial.step += 1;
+  if (model.tutorial.step >= ui::kTutorialSteps) end_tutorial(model, at_us, kTutorialDone);
+}
+
+void Controller::end_tutorial(Model& model, uint64_t at_us, const char* status) {
+  model.tutorial.active = false;
+  model.tutorial.step = 0;
+  model.tutorial.save_pending = true;
+  say(model, at_us, kStatusUs, "%s", status);
 }
 
 // A held pad is muted in every section, so a copy made meanwhile and a switch

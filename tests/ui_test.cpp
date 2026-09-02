@@ -1,7 +1,7 @@
 // The views under the scripted harness (tests/app_support.h): every §9 view drawn
-// into the fake HAL's framebuffer and read back with the screen's own font, and
-// the lights. spec/scenarios.md T-45, T-57, T-58, T-85, T-86, T-87, T-88, T-89,
-// T-90, T-91, T-92.
+// into the fake HAL's framebuffer and read back with the screen's own font, the
+// lights, and the first-run tutorial. spec/scenarios.md T-22, T-45, T-57, T-58,
+// T-85, T-86, T-87, T-88, T-89, T-90, T-91, T-92.
 #include <cstring>
 #include <string>
 #include <utility>
@@ -678,6 +678,16 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   w.press(Button::show);
   CHECK(w.model().view == app::View::ring);
 
+  SUBCASE("play on the run tutorial row starts the tutorial on the ring") {
+    open_settings(w, Button::undo, Button::show);
+    w.turn(Encoder::speed, -2);
+    CHECK(w.model().settings.cursor == static_cast<int>(ui::SettingsRow::run_tutorial));
+    w.press(Button::play);
+    CHECK(w.model().tutorial.active);
+    CHECK(w.model().view == app::View::ring);
+    w.frame();
+    CHECK(has_text(fb, "tap the kick"));
+  }
   SUBCASE("factory reset takes a hold of play and brings everything back to power-on") {
     w.press(section('B'));
     w.press(Button::show);
@@ -697,7 +707,87 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
     CHECK(w.model().arrangement.length == 0);
     CHECK(w.model().current == 0);
     CHECK(w.model().view == app::View::ring);
+    CHECK(w.model().tutorial.active);
   }
+}
+
+TEST_CASE("T-22 First-boot tutorial: the prompts in order, done within 45 s when followed, skippable with play") {
+  World w(true);
+  w.frame();
+  REQUIRE(w.model().tutorial.active);
+  const uint16_t* fb = screen();
+  const int64_t start = w.frames;
+  auto read_and_act = [&] { w.run_for(5 * kSecond); };  // a tester reads the prompt and does it
+
+  CHECK(has_text(fb, "tap the kick"));
+  read_and_act();
+  w.tap(Pad::kick);
+  w.frame();
+  CHECK(has_text(fb, "tap it again"));
+  CHECK(has_text(fb, "see it stretch?"));
+  CHECK(has_text(fb, "one kick"));  // the message row still reports the edit
+  CHECK(background_row(fb, ui::content_bottom(2) + 1));  // the ring ends above the two prompt rows
+  read_and_act();
+  w.tap(Pad::kick);
+  w.frame();
+  CHECK(has_text(fb, "tap the snare"));
+  // Two kicks: a dot at six o'clock. The ring has shrunk to end above the prompt's box.
+  CHECK(background_row(fb, ui::content_bottom(1) + 1));
+  read_and_act();
+  w.tap(Pad::snare);
+  w.frame();
+  CHECK(has_text(fb, "now turn chance"));
+  read_and_act();
+  w.turn(Encoder::chance, 1);
+  w.frame();
+  CHECK(has_text(fb, "hold show to share it"));
+  read_and_act();
+  w.hold(Button::show);
+  REQUIRE(w.model().view == app::View::share);
+  w.frame();
+  CHECK(has_text(fb, "press show twice"));
+  CHECK(has_text(fb, "and tap A A B A"));
+  CHECK(has_text(fb, "hold A and press play"));
+  read_and_act();
+  w.press(Button::show);  // ring
+  w.press(Button::show);  // text
+  w.press(Button::show);  // song
+  REQUIRE(w.model().view == app::View::song);
+  w.frame();
+  CHECK(has_text(fb, ui::kSongHint[3], kLegend));  // the hint sits above the prompt's box, nothing covered
+  CHECK(background_row(fb, ui::content_bottom(3) + 1));
+  for (const char letter : std::string("AABA")) w.press(section(letter));
+  w.button_down(section('A'));
+  w.run_for(kSecond / 2);
+  w.press(Button::play);
+  w.button_up(section('A'));
+  CHECK_FALSE(w.model().tutorial.active);
+  CHECK(w.status() == "that's a song");
+  CHECK(w.model().song_mode);  // from a stop the song starts at once (D-086)
+  CHECK(w.frames - start <= 45 * kSecond);
+  w.frame();
+  CHECK_FALSE(has_text(fb, "hold A and press play"));
+  uint8_t flag = 0;
+  uint32_t size = 0;
+  CHECK(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));
+  CHECK(flag == '1');
+}
+
+TEST_CASE("T-22 Play skips the tutorial, the next boot does not run it, and steps wait for their own gesture") {
+  World w(true);
+  w.tap(Pad::snare);  // not the kick: step 1 still waits
+  CHECK(w.model().tutorial.step == 0);
+  w.run_for(2 * kSecond);
+  w.press(Button::play);
+  CHECK_FALSE(w.model().tutorial.active);
+  CHECK(w.status() == "tutorial skipped");
+  CHECK_FALSE(w.model().transport);  // the press was the skip, not play
+  w.frame();
+  CHECK_FALSE(has_text(screen(), "tap the kick"));
+
+  const sound::SampleBank silent{};
+  app::init(silent);  // the next boot reads the flag off the card
+  CHECK_FALSE(app::model().tutorial.active);
 }
 
 TEST_CASE("T-90 Pad LEDs: dim with no steps, the track colour with steps, full for 100 ms after a hit") {

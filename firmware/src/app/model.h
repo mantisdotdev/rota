@@ -7,8 +7,8 @@
 #include "engine/section.h"
 #include "engine/state.h"
 
-// What the app is: four sections, the song, the transport, the settings and what
-// the screen says. The input grammar (controller) and the
+// What the app is: four sections, the song, the transport, the settings, the
+// tutorial and what the screen says. The input grammar (controller) and the
 // scheduler both change it, under hal::lock(); the views read a copy (D-084, D-086).
 namespace app {
 
@@ -44,10 +44,18 @@ struct Settings {
   bool sync_out;
 };
 
+// The first-run tutorial (§8.5, D-097): six steps, each waiting for one gesture.
+struct Tutorial {
+  bool active;
+  int step;
+  bool save_pending;  // the done flag must be written; app::tick does it outside the lock
+};
+
 constexpr int kNoSection = -1;
 constexpr int kDefaultBrightness = 100;
 constexpr int kDefaultSleepMinutes = 10;  // §7.7
 constexpr const char* kFirmwareVersion = "0.1.0";      // shown in settings; release tooling will stamp it (D-096)
+constexpr const char* kTutorialDoneFile = "tutorial-done";  // one byte on the card: '1' once the tutorial ran or was skipped
 
 struct Model {
   explicit Model(const engine::Kit& kit);
@@ -68,6 +76,7 @@ struct Model {
   Status status;
   Status knob;
   Settings settings;
+  Tutorial tutorial;
   engine::Tenths master_volume;  // §9.5: −6 dB by default, one detent 0.1 (D-087)
 };
 
