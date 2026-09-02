@@ -13,7 +13,9 @@
 namespace app {
 
 // `samples` holds the kit's WAVs, or empty samples: the platform entry point
-// provides them (the host reads spec/kits/, the device waits for io/).
+// provides them (the host reads spec/kits/, the device waits for io/). Once at
+// start-up on a platform; the test harness calls it again between cases, which
+// is safe because its audio callback runs only when the test calls it.
 void init(const sound::SampleBank& samples);
 
 // Input, holds and timeouts, the fired log, a frame when one is due.

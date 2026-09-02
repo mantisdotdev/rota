@@ -177,6 +177,7 @@ void light_pads(int64_t position, const engine::State& state) {
 // the device it runs once. Placement new is construction in place, not heap
 // allocation, and it keeps an 85 KB model off the stack.
 void init(const sound::SampleBank& samples) {
+  hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(kit);
   new (&scheduler) Scheduler(kit);
@@ -191,6 +192,7 @@ void init(const sound::SampleBank& samples) {
   scheduler.set_seed(seed);
   controller.set_seed(seed);
   audio.params.publish(params_of(the_model.sections[0].state(), kit, the_model.master_volume));
+  hal::unlock();
   hal::start_audio(&render);
   hal::start_timer(kTimerPeriodUs, &on_timer);
 }
