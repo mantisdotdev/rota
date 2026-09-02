@@ -13,6 +13,10 @@
 
 namespace app {
 
+// ui/ and hal/ each state the screen size, since neither may include the other (§12 rule 1).
+static_assert(ui::kWidth == hal::kScreenWidth, "ui and hal disagree on the screen width");
+static_assert(ui::kHeight == hal::kScreenHeight, "ui and hal disagree on the screen height");
+
 namespace {
 
 constexpr uint32_t kFramePeriodUs = 16667;                     // §7.3: 60 fps

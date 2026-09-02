@@ -3,13 +3,16 @@
 #include <atomic>
 
 // Lock-free single-producer, single-consumer ring buffers for the seams between the
-// control side (main loop, timer) and the audio callback (D-084). Fixed capacity,
-// no allocation; a full queue refuses a push and the producer tries again later.
+// control side (main loop, timer) and the audio callback (D-084). Fixed capacity
+// with one slot kept empty, so Capacity − 1 items fit; no allocation; a full queue
+// refuses a push and the producer tries again later.
 namespace app {
 
 template <typename T, int Capacity>
 class SpscQueue {
  public:
+  static_assert(Capacity >= 2, "SpscQueue keeps one slot empty; Capacity − 1 items fit");
+
   SpscQueue() : head_(0), tail_(0), items_{} {}
 
   // Producer side.

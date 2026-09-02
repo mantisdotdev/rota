@@ -2,6 +2,9 @@
 
 namespace app {
 
+static_assert(sizeof(sound::Params::tracks) / sizeof(sound::TrackMix) == engine::kTrackCount,
+              "sound::Params has a mix for every engine track");
+
 namespace {
 constexpr float kTenths = 10.0f;
 }

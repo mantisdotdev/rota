@@ -51,7 +51,8 @@ struct FiredLog {
 class AudioPath {
  public:
   AudioPath();
-  // Back to the state after construction: empty queues, position 0.
+  // Back to the state after construction: empty queues, position 0. Call only
+  // while the audio callback is stopped: it drains the queues the audio side owns.
   void reset();
   // `engine` lives wherever the platform put it (HAL_BULK_MEMORY); frames in the
   // bank stay owned by the caller.

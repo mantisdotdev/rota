@@ -45,12 +45,11 @@ bool is_armable(hal::Button button) {
 }  // namespace
 
 Controller::Controller(const engine::Kit& kit)
-    : kit_(&kit), dice_(0), pads_{}, buttons_{}, armed_(kNoButton), armed_at_us_(0), audio_(nullptr) {}
+    : kit_(&kit), dice_(0), pads_{}, buttons_{}, armed_(kNoButton), armed_at_us_(0) {}
 
 void Controller::set_seed(uint32_t seed) { dice_ = engine::Prng(seed); }
 
 void Controller::handle(const hal::InputEvent& event, Model& model, Scheduler& scheduler, AudioPath& audio) {
-  audio_ = &audio;
   switch (event.kind) {
     case hal::InputKind::pad_down:
       if (event.index < engine::kTrackCount) pad_down(event.index, event.time_us, model, scheduler, audio);
@@ -77,8 +76,7 @@ void Controller::handle(const hal::InputEvent& event, Model& model, Scheduler& s
   }
 }
 
-void Controller::tick(uint64_t now_us, Model& model, Scheduler& /*scheduler*/, AudioPath& audio) {
-  audio_ = &audio;
+void Controller::tick(uint64_t now_us, Model& model, Scheduler& /*scheduler*/, AudioPath& /*audio*/) {
   if (armed_ != kNoButton && held_for(armed_at_us_, now_us) >= kArmTimeoutUs) armed_ = kNoButton;  // T-07
   for (int i = 0; i < hal::kButtonCount; ++i) {
     Press& press = buttons_[i];

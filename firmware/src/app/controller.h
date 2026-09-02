@@ -64,6 +64,9 @@ class Controller {
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);
   bool any_pad_held() const;
+#if defined(__GNUC__)
+  __attribute__((format(printf, 5, 6)))  // `this` is argument 1
+#endif
   void say(Model& model, uint64_t at_us, uint32_t duration_us, const char* format, ...);
 
   const engine::Kit* kit_;
@@ -72,7 +75,6 @@ class Controller {
   Press buttons_[hal::kButtonCount];
   int armed_;
   uint64_t armed_at_us_;
-  AudioPath* audio_;  // for the hold actions run from tick()
 };
 
 }  // namespace app
