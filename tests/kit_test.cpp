@@ -1,12 +1,12 @@
-// The generated lofi header carries PRD Appendix A exactly (D-027), so the engine
-// tests run against the real kit data rather than a fixture.
+// T-61: the generated lofi header carries PRD Appendix A exactly (D-027), so the
+// engine tests run against the real kit data rather than a fixture.
 #include <cstring>
 
 #include "engine_support.h"
 
 using namespace support;
 
-TEST_CASE("lofi kit header matches PRD Appendix A") {
+TEST_CASE("T-61 Generate the lofi kit header from spec/kits/lofi/kit.json") {
   const Kit& kit = lofi();
   CHECK(std::strcmp(kit.id, "lofi") == 0);
 
