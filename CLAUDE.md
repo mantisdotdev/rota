@@ -37,6 +37,7 @@ Read these first instead of exploring:
 - `firmware/src/engine/` and `firmware/src/sound/` — portable, pure, no platform headers. Everything else may depend on `hal/`.
 - `firmware/src/hal/` — the only place platform code lives: `teensy/` and `sdl/`.
 - `host/` — the simulator. It is the reference behaviour; when hardware differs, the HAL is wrong, not the app.
+- `hardware/WIRING.md` — EVT pins, unverified until bring-up; `tests/hal_fake.cpp` — the HAL the tests link.
 
 ## Before editing
 For anything beyond a one-line fix, state in four lines: outcome, evidence (which command proves it), boundaries (what you will not touch), stop condition.
