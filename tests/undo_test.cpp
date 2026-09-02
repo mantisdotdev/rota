@@ -72,6 +72,14 @@ TEST_CASE("T-13 Undo after any edit") {
     REQUIRE(steps_text(section.state(), Pad::kick) == "0");
     section.undo();
     CHECK(section.state() == before);
+    // Loading the state already in place changes nothing, so it records nothing
+    // and keeps the redo the undo just made available (D-038).
+    const int levels = section.undo_levels();
+    REQUIRE(section.redo_levels() == 1);
+    const State same = section.state();
+    load(section, same);
+    CHECK(section.undo_levels() == levels);
+    CHECK(section.redo_levels() == 1);
   }
   SUBCASE("redo brings the edit back") {
     tap(section, Pad::rim, lofi());
@@ -149,6 +157,22 @@ TEST_CASE("T-53 Kick x4 and snare x2 set, other tracks empty; press dice, then h
     section.undo();
     dice_fill_empty(section, lofi(), 3);  // wraps to the first loop
     CHECK(steps_text(section.state(), Pad::hat) == "0000");
+  }
+  SUBCASE("hold that puts the same loop back records no undo level (D-038)") {
+    dice_replace_all(section, lofi(), 1);
+    const int levels = section.undo_levels();
+    dice_replace_all(section, lofi(), 1);
+    CHECK(section.undo_levels() == levels);
+    CHECK(steps_text(section.state(), Pad::hat) == "00000");
+  }
+  SUBCASE("press with nothing to fill records no undo level (D-038)") {
+    dice_fill_empty(section, lofi(), 0);  // the first loop leaves clap, pluck and rim empty
+    const int levels = section.undo_levels();
+    dice_fill_empty(section, lofi(), 0);  // the same loop again: those three stay empty
+    CHECK(section.undo_levels() == levels);
+    dice_fill_empty(section, lofi(), 2);  // the third loop fills them
+    CHECK(section.undo_levels() == levels + 1);
+    CHECK(steps_text(section.state(), Pad::rim) == "0.");
   }
   SUBCASE("hold: all eight tracks are replaced, undo restores") {
     dice_replace_all(section, lofi(), 1);  // the second loop

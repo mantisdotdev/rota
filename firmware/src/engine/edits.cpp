@@ -58,9 +58,26 @@ Tenths nudged(Tenths value, int detents) {
   return static_cast<Tenths>(moved);
 }
 
-bool any_track_empty(const State& state) {
+bool same_pattern(const Track& a, const Track& b) {
+  if (a.alt != b.alt || a.speed != b.speed || a.step_count != b.step_count) return false;
+  for (int i = 0; i < a.step_count; ++i) {
+    if (a.steps[i] != b.steps[i]) return false;
+  }
+  return true;
+}
+
+// A dice press fills only empty tracks; it changes something when one of them
+// would take a different pattern from the loop (D-038: no change, no undo level).
+bool fill_changes_anything(const State& current, const State& loop) {
   for (int i = 0; i < kTrackCount; ++i) {
-    if (is_empty(state.tracks[i])) return true;
+    if (is_empty(current.tracks[i]) && !same_pattern(current.tracks[i], loop.tracks[i])) return true;
+  }
+  return false;
+}
+
+bool replace_changes_anything(const State& current, const State& loop) {
+  for (int i = 0; i < kTrackCount; ++i) {
+    if (!same_pattern(current.tracks[i], loop.tracks[i])) return true;
   }
   return false;
 }
@@ -141,9 +158,9 @@ void adjust_track_chance(State& state, Pad pad, int detents) {
 }
 
 void dice_fill_empty(Section& section, const Kit& kit, uint32_t roll) {
-  if (kit.dice_loop_count == 0 || !any_track_empty(section.state())) return;
+  if (kit.dice_loop_count == 0) return;
   const Decoded loop = decode(kit.dice_loops[roll % kit.dice_loop_count], kit);
-  if (!loop.ok) return;
+  if (!loop.ok || !fill_changes_anything(section.state(), loop.state)) return;
   State& live = section.push_edit();
   for (int i = 0; i < kTrackCount; ++i) {
     if (is_empty(live.tracks[i])) copy_pattern(loop.state.tracks[i], live.tracks[i]);
@@ -153,11 +170,14 @@ void dice_fill_empty(Section& section, const Kit& kit, uint32_t roll) {
 void dice_replace_all(Section& section, const Kit& kit, uint32_t roll) {
   if (kit.dice_loop_count == 0) return;
   const Decoded loop = decode(kit.dice_loops[roll % kit.dice_loop_count], kit);
-  if (!loop.ok) return;
+  if (!loop.ok || !replace_changes_anything(section.state(), loop.state)) return;
   State& live = section.push_edit();
   for (int i = 0; i < kTrackCount; ++i) copy_pattern(loop.state.tracks[i], live.tracks[i]);
 }
 
-void load(Section& section, const State& state) { section.push_edit() = state; }
+void load(Section& section, const State& state) {
+  if (section.state() == state) return;  // the same loop again: nothing to undo (D-038)
+  section.push_edit() = state;
+}
 
 }  // namespace engine
