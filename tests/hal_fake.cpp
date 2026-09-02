@@ -13,6 +13,8 @@ hal::TimerCallback timer_callback_ = nullptr;
 uint32_t timer_period_us_ = 0;
 std::vector<std::string> log_;
 hal_fake::Led leds_[hal::kPadCount];
+hal_fake::Led button_leds_[hal::kButtonCount];
+int brightness_ = 100;
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
 int presented_ = 0;
 std::map<std::string, std::vector<uint8_t>> files_;
@@ -29,6 +31,8 @@ void reset() {
   timer_period_us_ = 0;
   log_.clear();
   std::memset(leds_, 0, sizeof leds_);
+  std::memset(button_leds_, 0, sizeof button_leds_);
+  brightness_ = 100;
   std::memset(framebuffer_, 0, sizeof framebuffer_);
   presented_ = 0;
   files_.clear();
@@ -41,6 +45,8 @@ hal::TimerCallback timer_callback() { return timer_callback_; }
 uint32_t timer_period_us() { return timer_period_us_; }
 const std::vector<std::string>& log() { return log_; }
 Led led(int pad) { return leds_[pad]; }
+Led button_led(int button) { return button_leds_[button]; }
+int brightness() { return brightness_; }
 const uint16_t* framebuffer() { return framebuffer_; }
 int frames_presented() { return presented_; }
 
@@ -78,7 +84,12 @@ void present() { presented_ += 1; }
 void set_led(int pad, uint8_t red, uint8_t green, uint8_t blue) {
   if (pad >= 0 && pad < kPadCount) leds_[pad] = hal_fake::Led{red, green, blue};
 }
+void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue) {
+  const int index = static_cast<int>(button);
+  if (index >= 0 && index < kButtonCount) button_leds_[index] = hal_fake::Led{red, green, blue};
+}
 void show_leds() {}
+void set_brightness(int percent) { brightness_ = percent; }
 
 bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   const auto found = files_.find(path);

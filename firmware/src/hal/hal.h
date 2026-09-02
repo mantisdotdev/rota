@@ -77,9 +77,14 @@ void unlock();
 uint16_t* framebuffer();
 void present();
 
-// The RGB LED under each pad (§7.2). set_led stages; show_leds sends all eight.
+// The RGB LED under each pad and the backlight under each button (§7.2, §8.6,
+// D-099). set_led and set_button_led stage; show_leds sends what changed.
 void set_led(int pad, uint8_t red, uint8_t green, uint8_t blue);
+void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue);
 void show_leds();
+
+// The screen's backlight, 0–100 (§9.4).
+void set_brightness(int percent);
 
 // Whole files on the device's storage, by a path relative to its root. read_file
 // stores at most `capacity` bytes and the file's size; false when the file is

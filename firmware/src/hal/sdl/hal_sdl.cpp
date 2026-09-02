@@ -1,7 +1,7 @@
 // Host HAL (PRD §12, D-016, D-090): an SDL2 window is the screen with a strip of
-// eight pad LEDs under it, the keyboard and mouse wheel are the controls, SDL's
-// timer thread is the scheduler's clock and a mutex is the lock. Audio and storage
-// are in their own files beside this one.
+// the eight pad LEDs and the eleven button backlights under it, the keyboard and
+// mouse wheel are the controls, SDL's timer thread is the scheduler's clock and a
+// mutex is the lock. Audio and storage are in their own files beside this one.
 #include <SDL.h>
 
 #include <atomic>
@@ -13,10 +13,16 @@
 namespace {
 
 constexpr int kWindowScale = 2;
-constexpr int kLedStripHeight = 12;  // logical pixels under the screen
+constexpr int kLedStripHeight = 28;  // logical pixels under the screen: a row of pads, a row of buttons
 constexpr int kLedSize = 8;
 constexpr int kLedPitch = 30;
 constexpr int kLedLeft = (hal::kScreenWidth - kLedPitch * hal::kPadCount + (kLedPitch - kLedSize)) / 2;
+constexpr int kPadRowTop = hal::kScreenHeight + 4;
+constexpr int kButtonPitch = 20;
+constexpr int kButtonLeft = (hal::kScreenWidth - kButtonPitch * hal::kButtonCount + (kButtonPitch - kLedSize)) / 2;
+constexpr int kButtonRowTop = hal::kScreenHeight + 16;
+constexpr int kPercentFull = 100;
+constexpr Uint8 kColourModFull = 255;
 constexpr int kLogicalHeight = hal::kScreenHeight + kLedStripHeight;
 constexpr int kInputCapacity = 256;
 constexpr int kPollWaitMs = 1;
@@ -40,6 +46,7 @@ SDL_Texture* screen = nullptr;
 SDL_mutex* control_lock = nullptr;
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
 Led leds_[hal::kPadCount];
+Led button_leds_[hal::kButtonCount];
 hal::InputEvent input_[kInputCapacity];
 int input_count_ = 0;
 int selected_encoder_ = 0;
@@ -147,6 +154,15 @@ void on_event(const SDL_Event& event) {
   }
 }
 
+// An unlit LED shows as the legend colour so its place is visible.
+void draw_led(Led led, int x, int y) {
+  const bool lit = led.red != 0 || led.green != 0 || led.blue != 0;
+  SDL_SetRenderDrawColor(renderer, lit ? led.red : kUnlitRed, lit ? led.green : kUnlitGreen, lit ? led.blue : kUnlitBlue,
+                         SDL_ALPHA_OPAQUE);
+  const SDL_Rect square{x, y, kLedSize, kLedSize};
+  SDL_RenderFillRect(renderer, &square);
+}
+
 Uint32 timer_trampoline(Uint32 interval, void* /*unused*/) {
   const hal::TimerCallback callback = timer_callback_.load(std::memory_order_acquire);
   if (callback != nullptr) callback();
@@ -174,6 +190,7 @@ void init() {
   screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, kScreenWidth, kScreenHeight);
   if (screen == nullptr) fail("SDL_CreateTexture");
   for (Led& led : leds_) led = Led{0, 0, 0};
+  for (Led& led : button_leds_) led = Led{0, 0, 0};
   std::printf("hal/sdl: window %dx%d (screen %dx%d, scale %d)\n", kScreenWidth * kWindowScale,
               kLogicalHeight * kWindowScale, kScreenWidth, kScreenHeight, kWindowScale);
   std::fflush(stdout);
@@ -226,14 +243,8 @@ void present() {
   SDL_RenderClear(renderer);
   const SDL_Rect screen_rect{0, 0, kScreenWidth, kScreenHeight};
   SDL_RenderCopy(renderer, screen, nullptr, &screen_rect);
-  for (int i = 0; i < kPadCount; ++i) {
-    const Led led = leds_[i];
-    const bool lit = led.red != 0 || led.green != 0 || led.blue != 0;
-    SDL_SetRenderDrawColor(renderer, lit ? led.red : kUnlitRed, lit ? led.green : kUnlitGreen,
-                           lit ? led.blue : kUnlitBlue, SDL_ALPHA_OPAQUE);
-    const SDL_Rect pad{kLedLeft + i * kLedPitch, kScreenHeight + (kLedStripHeight - kLedSize) / 2, kLedSize, kLedSize};
-    SDL_RenderFillRect(renderer, &pad);
-  }
+  for (int i = 0; i < kPadCount; ++i) draw_led(leds_[i], kLedLeft + i * kLedPitch, kPadRowTop);
+  for (int i = 0; i < kButtonCount; ++i) draw_led(button_leds_[i], kButtonLeft + i * kButtonPitch, kButtonRowTop);
   SDL_RenderPresent(renderer);
 }
 
@@ -242,7 +253,21 @@ void set_led(int pad, uint8_t red, uint8_t green, uint8_t blue) {
   leds_[pad] = Led{red, green, blue};
 }
 
+void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue) {
+  const int index = static_cast<int>(button);
+  if (index < 0 || index >= kButtonCount) return;
+  button_leds_[index] = Led{red, green, blue};
+}
+
 void show_leds() {}  // drawn with the next present()
+
+// The window's screen dims like the panel's backlight would.
+void set_brightness(int percent) {
+  if (percent < 0) percent = 0;
+  if (percent > kPercentFull) percent = kPercentFull;
+  const Uint8 level = static_cast<Uint8>(kColourModFull * percent / kPercentFull);
+  SDL_SetTextureColorMod(screen, level, level, level);
+}
 
 int battery_percent() {
   int percent = -1;

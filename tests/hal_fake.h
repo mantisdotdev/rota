@@ -29,6 +29,8 @@ uint32_t timer_period_us();
 
 const std::vector<std::string>& log();
 Led led(int pad);
+Led button_led(int button);
+int brightness();
 const uint16_t* framebuffer();
 int frames_presented();
 
