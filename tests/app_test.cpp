@@ -290,7 +290,7 @@ TEST_CASE("T-81 Emptying the arrangement under a playing song ends song play wit
 TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over") {
   World w;
   w.tap(Pad::kick, 4);
-  w.tap(Pad::bass);  // a synth voice at 0 that sustains for two seconds (D-075): the tail to keep
+  w.tap(Pad::bass);  // a synth voice at 0 of every cycle, sustaining two seconds (D-075): the tail to keep
   w.play();
   // Two blocks (5.3 ms) before the kick at 1/4, which the 10 ms lookahead has already handed over.
   w.run_until(w.at(1, engine::Fraction{1, 4}) - 2 * kBlock);
@@ -298,7 +298,8 @@ TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over
   CHECK_FALSE(w.model().transport);
   w.run_for(8 * kBlock);
   CHECK(w.times_in_cycle(Pad::kick, 1) == "0");  // the 1/4 hit never sounded
-  CHECK(w.last_peak > 0.01f);                     // the bass struck at 0 is still sounding
+  CHECK(w.times_in_cycle(Pad::bass, 1) == "0");  // the bass struck 0.6 s before the stop, at this cycle's start
+  CHECK(w.last_peak > 0.01f);                     // and it is still sounding after the stop
 
   w.play();  // a fresh cycle whose hits all fire
   w.run_until(w.cycle_start(1));
