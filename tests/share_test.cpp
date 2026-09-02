@@ -224,6 +224,18 @@ TEST_CASE("T-16 Load a code with an unknown future field") {
   }
 }
 
+TEST_CASE("T-60 Load a code whose numbers carry leading zeros") {
+  const Decoded result = decode("RT2:lofi:096:010:02:00:015:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi());
+  REQUIRE(result.ok);
+  CHECK(result.state.bpm == 96);
+  CHECK(result.state.filter == 10);
+  CHECK(result.state.fx == 2);
+  CHECK(result.state.chance == 0);
+  CHECK(result.state.swing == 15);
+  CHECK(hit_times(events_of(result.state), Pad::kick) == "0");
+  CHECK(code_of(result.state) == "RT2:lofi:96:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1");
+}
+
 TEST_CASE("T-45 Encode any state, and every golden code") {
   for (const Golden& golden : kGoldens) {
     CAPTURE(golden.id);
