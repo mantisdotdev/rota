@@ -36,6 +36,7 @@ FiredLog the_fired_log;
 uint64_t last_frame_us = 0;
 uint64_t last_tick_us = 0;
 uint32_t worst_tick_gap_us = 0;  // since the last latency report: bounds what the loop adds before a press is read
+engine::State frame_state;       // the edited section as of the last frame, copied under the lock
 ui::Flash flashes[ui::kMaxFlashes];
 char footer[kStatusCapacity + engine::kMaxArrangementLength];
 char line[kLineCapacity];
@@ -110,7 +111,7 @@ int collect_flashes(int64_t position) {
 
 void draw(uint64_t now_us) {
   hal::lock();
-  const engine::State state = the_model.sections[the_model.current].state();
+  frame_state = the_model.sections[the_model.current].state();
   const int64_t position = audio.position();
   const engine::Fraction playhead = scheduler.playhead(position);
   const uint32_t cycle_index = scheduler.cycle_index();
@@ -124,11 +125,11 @@ void draw(uint64_t now_us) {
 
   const bool status_showing = status.duration_us != 0 && now_us - status.shown_at_us < status.duration_us;
   ui::RingModel ring{};
-  ring.state = &state;
+  ring.state = &frame_state;
   ring.cycle_index = cycle_index;
   ring.playhead = playhead;
   ring.playing = playing;
-  ring.bpm = state.bpm;
+  ring.bpm = frame_state.bpm;
   ring.section = letter_of(current);
   ring.song = kSongNumber;
   ring.battery = hal::battery_percent();
@@ -141,9 +142,9 @@ void draw(uint64_t now_us) {
 }
 
 // Pads with steps glow in their track colour, a pad that just fired lights fully,
-// and a pad with no steps goes dark (§8.2).
-void light_pads(int64_t position) {
-  const engine::State& state = the_model.sections[the_model.current].state();
+// and a pad with no steps goes dark (§8.2). Reads the frame's copy of the state,
+// never the model, which the timer may be changing.
+void light_pads(int64_t position, const engine::State& state) {
   int percent[engine::kTrackCount];
   for (int i = 0; i < engine::kTrackCount; ++i) {
     percent[i] = engine::is_empty(state.tracks[i]) ? 0 : kLedRestingPercent;
@@ -207,7 +208,7 @@ void tick() {
   last_frame_us = now_us;
   draw(now_us);
   hal::present();
-  light_pads(audio.position());
+  light_pads(audio.position(), frame_state);
 }
 
 const Model& model() { return the_model; }
