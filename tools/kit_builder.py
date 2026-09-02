@@ -13,6 +13,7 @@ format comes later with sound/.
 """
 
 import json
+import math
 import os
 import sys
 
@@ -40,7 +41,7 @@ class KitError(Exception):
 
 def tenths(value, what):
     """0.0–1.0 in steps of 0.1 → 0–10 (share-format §3, D-014)."""
-    scaled = float(value) * 10
+    scaled = finite_number(value, what) * 10
     rounded = round(scaled)
     if abs(scaled - rounded) > EXACT_TENTHS_TOLERANCE or not 0 <= rounded <= 10:
         raise KitError(f"{what} must be a multiple of 0.1 in 0–1, got {value}")
@@ -49,11 +50,26 @@ def tenths(value, what):
 
 def hundredths(value, what):
     """0.0–1.0 in steps of 0.01 → 0–100 (D-011)."""
-    scaled = float(value) * 100
+    scaled = finite_number(value, what) * 100
     rounded = round(scaled)
     if abs(scaled - rounded) > EXACT_TENTHS_TOLERANCE or not 0 <= rounded <= 100:
         raise KitError(f"{what} must be a multiple of 0.01 in 0–1, got {value}")
     return int(rounded)
+
+
+def finite_number(value, what):
+    """A JSON number C++ can hold: bools are not numbers, and Python reads NaN and
+    Infinity from JSON, which the header would print as nanf or inff."""
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise KitError(f"{what} must be a finite number, got {value!r}")
+    return float(value)
+
+
+def exact_bool(value, what):
+    """A JSON boolean: the string \"false\" is true to Python and would print as true."""
+    if type(value) is not bool:
+        raise KitError(f"{what} must be true or false, got {value!r}")
+    return value
 
 
 def exact_int(value, what):
@@ -113,8 +129,8 @@ def cpp_pad(pad, what):
     if voice == "sample":
         source = pad["source"]
         pitch = exact_int(pad.get("pitch", 0), f"{what} pitch")
-        start = float(pad.get("start", 0))
-        decay = float(pad.get("decay", 1.0))
+        start = finite_number(pad.get("start", 0), f"{what} start")
+        decay = finite_number(pad.get("decay", 1.0), f"{what} decay")
         octave = 0
     else:
         source = pad["preset"]
@@ -188,7 +204,7 @@ inline constexpr Kit {variable}{{
     {hundredths(kit["swing"], "swing")},
     {tenths(kit["filter"], "filter")},
     {tenths(kit["fx"], "fx")},
-    {{{"true" if sidechain["on"] else "false"}, {exact_int(sidechain["duck_db"], "sidechain duck_db")}, {exact_int(sidechain["release_ms"], "sidechain release_ms")}}},
+    {{{"true" if exact_bool(sidechain["on"], "sidechain on") else "false"}, {exact_int(sidechain["duck_db"], "sidechain duck_db")}, {exact_int(sidechain["release_ms"], "sidechain release_ms")}}},
 }};
 
 }}  // namespace engine::kits
