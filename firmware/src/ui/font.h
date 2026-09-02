@@ -6,7 +6,8 @@
 
 // The screen's monospace type (Appendix D): a 5×7 pixel face drawn at twice its
 // size, 14 px tall, which meets the 12 px minimum of §8.6. Lowercase letters,
-// digits, the section letters A–D and the punctuation the status line uses.
+// digits, the capitals of chord names, section letters and code prefixes (A–G,
+// M, R, S, T), and the punctuation the views use.
 namespace ui {
 
 constexpr int kGlyphWidth = 5;
