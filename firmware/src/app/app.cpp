@@ -9,6 +9,7 @@
 #include "engine/kits/lofi.h"
 #include "hal/hal.h"
 #include "ui/color.h"
+#include "ui/draw.h"
 #include "ui/ring.h"
 
 namespace app {
