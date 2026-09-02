@@ -4,7 +4,7 @@
 # Every executable lands directly in build/ so ./build/tests, ./build/simulator and
 # ./build/render work as written in CLAUDE.md.
 cmake_minimum_required(VERSION 3.20)
-project(rota_host LANGUAGES CXX)
+project(rota_host LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,12 @@ target_include_directories(core PUBLIC "${FIRMWARE_SRC}")
 # The Teensy builder compiles without exceptions or RTTI; matching it here means code
 # that builds on the host also builds on the device.
 target_compile_options(core PRIVATE -fno-exceptions -fno-rtti)
+
+# qrcodegen: Nayuki's QR encoder, vendored C under firmware/lib/ where PlatformIO
+# finds it on its own (D-092). Its own target because it is C, not C++.
+add_library(qrcodegen STATIC "${REPO_ROOT}/firmware/lib/qrcodegen/qrcodegen.c")
+target_include_directories(qrcodegen PUBLIC "${REPO_ROOT}/firmware/lib/qrcodegen")
+target_link_libraries(core PUBLIC qrcodegen)
 
 # hal_sdl: the host HAL (D-016). SDL2main is not needed on macOS or Linux. An object
 # library, not an archive: every HAL function must be in the binary whatever
