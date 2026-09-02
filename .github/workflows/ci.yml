@@ -4,6 +4,10 @@ name: ci
 
 on: [push, pull_request]
 
+# Nothing here writes to the repository; the token only needs to read it.
+permissions:
+  contents: read
+
 jobs:
   host-and-tests:
     runs-on: ubuntu-latest

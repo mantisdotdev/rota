@@ -12,6 +12,11 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+  pre_merge_checks:
+    # Docstring coverage is a Python measure; on the C++ engine it counts comments
+    # that do not exist by convention and gives no signal.
+    docstrings:
+      mode: "off"
   path_filters:
     - "!build/**"
     - "!firmware/.pio/**"
