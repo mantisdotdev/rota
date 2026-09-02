@@ -1,5 +1,6 @@
 # Build outputs
 build/
+__pycache__/
 firmware/.pio/
 out/
 out/**/*.wav

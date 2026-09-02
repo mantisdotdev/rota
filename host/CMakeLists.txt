@@ -55,7 +55,15 @@ target_link_libraries(simulator PRIVATE core hal_sdl)
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "${REPO_ROOT}/tests/*.cpp")
 add_executable(tests ${TEST_SOURCES})
 target_include_directories(tests SYSTEM PRIVATE "${REPO_ROOT}/tests")
-target_link_libraries(tests PRIVATE core)
+target_link_libraries(tests PRIVATE offline)
+
+# offline: the share-code renderer behind tools/render (D-082). A library so the tests
+# exercise the same code without spawning the tool. The kit folder is baked in so the
+# tool needs no argument for it.
+add_library(offline STATIC "${REPO_ROOT}/tools/render/offline.cpp")
+target_include_directories(offline PUBLIC "${REPO_ROOT}/tools")
+target_compile_definitions(offline PUBLIC ROTA_KITS_DIR="${REPO_ROOT}/spec/kits")
+target_link_libraries(offline PUBLIC core)
 
 add_executable(render "${REPO_ROOT}/tools/render/main.cpp")
-target_link_libraries(render PRIVATE core)
+target_link_libraries(render PRIVATE offline)
