@@ -12,8 +12,10 @@
 // The input grammar (PRD §8, D-085): pads audition on press and edit on a short
 // release; a pad held is muted and turns every knob and button into its per-track
 // version (§8.1); round and section buttons act on a short release and do their
-// hold meaning once the hold passes 300 ms. Everything here runs on the main loop
-// under hal::lock(), and writes the model that the scheduler reads on the beat.
+// hold meaning once the hold passes 300 ms. The views' gestures live here too:
+// show's hold and undo + show (§9.3, §9.4) and the settings rows (D-096).
+// Everything here runs on the main loop under
+// hal::lock(), and writes the model that the scheduler reads on the beat.
 namespace app {
 
 constexpr uint32_t kHoldUs = 300000;          // a press longer than this is a hold
@@ -51,7 +53,11 @@ class Controller {
   void button_down(hal::Button button, uint64_t at_us, Model& model, AudioPath& audio);
   void button_up(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void button_press(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
-  void button_hold(hal::Button button, uint64_t at_us, Model& model);
+  void button_hold(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void open_settings(Model& model, hal::Button other);
+  void settings_turn(hal::Encoder encoder, int detents, Model& model);
+  void settings_play(uint64_t at_us, Model& model);
+  void factory_reset(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void section_press(int target, uint64_t at_us, Model& model, AudioPath& audio);
   void play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
@@ -64,10 +70,15 @@ class Controller {
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);
   bool any_pad_held() const;
+
 #if defined(__GNUC__)
   __attribute__((format(printf, 5, 6)))  // `this` is argument 1
 #endif
   void say(Model& model, uint64_t at_us, uint32_t duration_us, const char* format, ...);
+#if defined(__GNUC__)
+  __attribute__((format(printf, 4, 5)))
+#endif
+  void show_knob(Model& model, uint64_t at_us, const char* format, ...);
 
   const engine::Kit* kit_;
   engine::Prng dice_;

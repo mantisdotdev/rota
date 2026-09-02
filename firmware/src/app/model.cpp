@@ -14,8 +14,11 @@ Model::Model(const engine::Kit& kit)
       song_start_pending(false),
       transport(false),
       roll(false),
+      song_hint_dismissed(false),
       view(View::ring),
       status{{}, 0, 0},
+      knob{{}, 0, 0},
+      settings{0, kDefaultBrightness, kDefaultSleepMinutes, true, true, true, true},
       master_volume(kDefaultMasterVolume) {}
 
 bool is_empty(const engine::State& state) {

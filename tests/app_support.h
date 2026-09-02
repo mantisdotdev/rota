@@ -85,6 +85,9 @@ struct World {
 
   void run_for(int64_t count) { run_until(frames + count); }
 
+  // At least one frame is drawn: 20 ms of world time at 60 fps (§7.3).
+  void frame() { run_for(kSecond / 50); }
+
   // A stalled timer thread: no tick until the first period boundary at or after
   // `frame`. Returns when that tick will fire.
   int64_t skip_timer_until(int64_t frame) {
@@ -156,6 +159,7 @@ struct World {
   const engine::State& state(int section) const { return app::model().sections[section].state(); }
   const app::Model& model() const { return app::model(); }
   std::string status() const { return app::model().status.text; }
+  std::string knob() const { return app::model().knob.text; }
 };
 
 }  // namespace app_support

@@ -1,31 +1,40 @@
 #include "app/app.h"
 
 #include <cstdio>
+#include <cstring>
 #include <new>
 
 #include "app/controller.h"
 #include "app/params.h"
 #include "app/scheduler.h"
 #include "engine/kits/lofi.h"
+#include "engine/share.h"
 #include "hal/hal.h"
 #include "ui/color.h"
 #include "ui/draw.h"
+#include "ui/leds.h"
+#include "ui/overlay.h"
 #include "ui/ring.h"
+#include "ui/settings.h"
+#include "ui/share.h"
+#include "ui/song.h"
+#include "ui/text.h"
 
 namespace app {
 
-// ui/ and hal/ each state the screen size, since neither may include the other (§12 rule 1).
+// ui/ and hal/ each state the screen and button counts, since neither may include the other (§12 rule 1).
 static_assert(ui::kWidth == hal::kScreenWidth, "ui and hal disagree on the screen width");
 static_assert(ui::kHeight == hal::kScreenHeight, "ui and hal disagree on the screen height");
+static_assert(ui::kButtonCount == hal::kButtonCount, "ui and hal disagree on the button count");
 
 namespace {
 
-constexpr uint32_t kFramePeriodUs = 16667;                     // §7.3: 60 fps
-constexpr int64_t kFlashFrames = sound::kSampleRate / 4;       // §9.1: 250 ms
-constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;   // a pad lights fully for 100 ms after its hit
-constexpr int kLedRestingPercent = 35;                         // a pad with steps
+constexpr uint32_t kFramePeriodUs = 16667;                    // §7.3: 60 fps
+constexpr int64_t kFlashFrames = sound::kSampleRate / 4;      // §9.1: 250 ms
+constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;  // a pad lights fully for 100 ms after its hit
 constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
+constexpr int kFooterCapacity = 32;
 constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
 
 const engine::Kit& kit = engine::kits::kLofi;
@@ -44,8 +53,33 @@ uint32_t worst_tick_gap_us = 0;  // since the last latency report: bounds what t
 engine::State frame_state;       // the edited section as of the last frame, copied under the lock
 int64_t frame_position = 0;      // the audio position read for that frame
 ui::Flash flashes[ui::kMaxFlashes];
-char footer[kStatusCapacity + engine::kMaxArrangementLength];
 char line[kLineCapacity];
+char footer[kFooterCapacity];
+engine::SectionCode shown_code;  // the code the share view's QR was made from
+ui::QrCode qr;
+int applied_brightness = -1;
+
+// The rest of what a frame reads from the model, copied under the lock so no view
+// sees it half changed.
+struct Frame {
+  View view;
+  Status status;
+  Status knob;
+  Arrangement arrangement;
+  bool song_mode;
+  int song_position;
+  bool song_filled;  // any section has steps
+  bool song_hint_dismissed;
+  bool transport;
+  bool roll;
+  int current;
+  int playing;
+  Settings settings;
+  int armed;
+  engine::Fraction playhead;
+  uint32_t cycle_index;
+};
+Frame frame;
 
 void render(float* left, float* right) { audio.render(left, right); }
 
@@ -75,22 +109,25 @@ void report_latency() {
   hal::log(line);
 }
 
-const char* footer_text(View view, const Arrangement& arrangement) {
-  switch (view) {
+bool showing(const Status& status, uint64_t now_us) {
+  return status.duration_us != 0 && now_us - status.shown_at_us < status.duration_us;
+}
+
+// What the bottom-left corner says while nothing transient does.
+const char* footer_text() {
+  switch (frame.view) {
+    case View::settings:
+      return ui::kSettingsHint;
+    case View::share:
+      if (frame_state.lineage[0] == '\0') return nullptr;
+      std::snprintf(footer, sizeof footer, "based on %s", frame_state.lineage);  // §9.3
+      return footer;
     case View::ring:
-      return nullptr;
     case View::text:
-      return "text view: next session";
     case View::song:
-      break;
+      return nullptr;
   }
-  const int written = std::snprintf(footer, sizeof footer, "song %d  ", kSongNumber);
-  int at = written;
-  for (int i = 0; i < arrangement.length && at + 1 < static_cast<int>(sizeof footer); ++i) {
-    footer[at++] = arrangement.letters[i];
-  }
-  footer[at] = '\0';
-  return footer;
+  return nullptr;
 }
 
 const char* armed_text(int armed) {
@@ -115,58 +152,132 @@ int collect_flashes(int64_t position) {
   return count;
 }
 
+void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
+  ui::RingModel ring{};
+  ring.bottom = bottom;
+  ring.state = &frame_state;
+  ring.cycle_index = frame.cycle_index;
+  ring.playhead = frame.playhead;
+  ring.playing = frame.transport;
+  ring.bpm = frame_state.bpm;
+  ring.section = letter_of(frame.current);
+  ring.song = kSongNumber;
+  ring.battery = hal::battery_percent();
+  ring.flashes = flashes;
+  ring.flash_count = collect_flashes(position);
+  ui::draw_ring(framebuffer, ring);
+}
+
+void draw_song(uint16_t* framebuffer) {
+  ui::SongModel song{};
+  song.song = kSongNumber;
+  song.filled[kSongNumber - 1] = frame.song_filled || frame.arrangement.length > 0;
+  song.letters = frame.arrangement.letters;
+  song.length = frame.arrangement.length;
+  song.playing = frame.song_mode ? frame.song_position : ui::kNoLetter;
+  song.show_hint = !frame.song_hint_dismissed;
+  ui::draw_song_view(framebuffer, song);
+}
+
+// The QR is made again only when the code changes: an encode at version 10 is
+// milliseconds, a frame is not.
+void draw_share(uint16_t* framebuffer, int bottom) {
+  const engine::SectionCode code = engine::encode(frame_state, kit);
+  if (std::strcmp(code.text, shown_code.text) != 0) {
+    shown_code = code;
+    ui::encode_share_qr(shown_code.text, qr);
+  }
+  ui::draw_share_view(framebuffer, ui::ShareModel{shown_code.text, &qr}, bottom);
+}
+
+void draw_settings(uint16_t* framebuffer) {
+  const Settings& settings = frame.settings;
+  const ui::SettingsModel model{frame_state.key,      frame_state.swing,      kit.id,           settings.brightness,
+                                settings.sleep_minutes, settings.midi_clock_in, settings.midi_clock_out, settings.sync_in,
+                                settings.sync_out,      kFirmwareVersion,       settings.cursor};
+  ui::draw_settings_view(framebuffer, model);
+}
+
 void draw(uint64_t now_us) {
   hal::lock();
   frame_state = the_model.sections[the_model.current].state();
   const int64_t position = audio.position();
   frame_position = position;
-  const engine::Fraction playhead = scheduler.playhead(position);
-  const uint32_t cycle_index = scheduler.cycle_index();
-  const bool playing = the_model.transport;
-  const int current = the_model.current;
-  const View view = the_model.view;
-  const Status status = the_model.status;
-  const Arrangement arrangement = the_model.arrangement;
-  const int armed = controller.armed();
+  frame.playhead = scheduler.playhead(position);
+  frame.cycle_index = scheduler.cycle_index();
+  frame.view = the_model.view;
+  frame.status = the_model.status;
+  frame.knob = the_model.knob;
+  frame.arrangement = the_model.arrangement;
+  frame.song_mode = the_model.song_mode;
+  frame.song_position = the_model.song_position;
+  frame.song_filled = false;
+  for (int i = 0; i < engine::kSectionCount; ++i) {
+    if (!is_empty(the_model.sections[i].state())) frame.song_filled = true;
+  }
+  frame.song_hint_dismissed = the_model.song_hint_dismissed;
+  frame.transport = the_model.transport;
+  frame.roll = the_model.roll;
+  frame.current = the_model.current;
+  frame.playing = the_model.playing;
+  frame.settings = the_model.settings;
+  frame.armed = controller.armed();
   hal::unlock();
 
-  const bool status_showing = status.duration_us != 0 && now_us - status.shown_at_us < status.duration_us;
-  ui::RingModel ring{};
-  ring.state = &frame_state;
-  ring.cycle_index = cycle_index;
-  ring.playhead = playhead;
-  ring.playing = playing;
-  ring.bpm = frame_state.bpm;
-  ring.section = letter_of(current);
-  ring.song = kSongNumber;
-  ring.battery = hal::battery_percent();
-  ring.status = status_showing ? status.text : nullptr;
-  ring.footer = footer_text(view, arrangement);
-  ring.armed = armed_text(armed);
-  ring.flashes = flashes;
-  ring.flash_count = collect_flashes(position);
-  ui::draw_ring(hal::framebuffer(), ring);
+  // Every view lays out above the overlay's rows (Appendix D).
+  ui::Overlay overlay{};
+  const int bottom = ui::content_bottom(overlay.prompt_count);
+  uint16_t* framebuffer = hal::framebuffer();
+  switch (frame.view) {
+    case View::ring:
+      draw_ring(framebuffer, position, bottom);
+      break;
+    case View::text:
+      ui::draw_text_view(framebuffer, frame_state, kit, bottom);
+      break;
+    case View::song:
+      draw_song(framebuffer);
+      break;
+    case View::share:
+      draw_share(framebuffer, bottom);
+      break;
+    case View::settings:
+      draw_settings(framebuffer);
+      break;
+  }
+  overlay.status = showing(frame.status, now_us) ? frame.status.text : nullptr;
+  overlay.knob = showing(frame.knob, now_us) ? frame.knob.text : nullptr;
+  overlay.footer = footer_text();
+  overlay.armed = armed_text(frame.armed);
+  if (overlay.armed != nullptr) {  // after the bpm on the ring, at the right of the top row elsewhere
+    overlay.armed_x = frame.view == View::ring ? ui::kArmedAfterBpm : ui::kWidth - ui::kMargin - ui::text_width(overlay.armed);
+  }
+  ui::draw_overlay(framebuffer, overlay);
 }
 
-// Pads with steps glow in their track colour, a pad that just fired lights fully,
-// and a pad with no steps goes dark (§8.2). Reads the frame's copy of the state,
-// never the model, which the timer may be changing.
-void light_pads(int64_t position, const engine::State& state) {
-  int percent[engine::kTrackCount];
-  for (int i = 0; i < engine::kTrackCount; ++i) {
-    percent[i] = engine::is_empty(state.tracks[i]) ? 0 : kLedRestingPercent;
-  }
+// The pads and the button backlights from the frame's copy of the state, never
+// the model, which the timer may be changing (D-099).
+void light_leds(int64_t position, const engine::State& state) {
+  ui::LedModel model{};
+  model.state = &state;
   const uint32_t total = the_fired_log.total;
   const uint32_t from = total > FiredLog::kCapacity ? total - FiredLog::kCapacity : 0;
   for (uint32_t seq = from; seq < total; ++seq) {
     const Fired& fired = the_fired_log.at(seq);
     const int64_t age = position - fired.sample;
-    if (age >= 0 && age <= kLedFlashFrames) percent[engine::index_of(fired.event.track)] = 100;
+    if (age >= 0 && age <= kLedFlashFrames) model.hit[engine::index_of(fired.event.track)] = true;
   }
-  for (int i = 0; i < engine::kTrackCount; ++i) {
-    const ui::Rgb colour = ui::kTrackRgb[i];
-    hal::set_led(i, static_cast<uint8_t>(colour.red * percent[i] / 100), static_cast<uint8_t>(colour.green * percent[i] / 100),
-                 static_cast<uint8_t>(colour.blue * percent[i] / 100));
+  model.armed = frame.armed == kNoButton ? ui::kNoButton : frame.armed;
+  model.roll = frame.roll;
+  model.showing = frame.view != View::ring;
+  model.transport = frame.transport;
+  model.current_section = frame.current;
+  model.playing_section = frame.playing;
+  ui::Leds leds;
+  ui::light(model, leds);
+  for (int i = 0; i < engine::kTrackCount; ++i) hal::set_led(i, leds.pads[i].red, leds.pads[i].green, leds.pads[i].blue);
+  for (int i = 0; i < ui::kButtonCount; ++i) {
+    hal::set_button_led(static_cast<hal::Button>(i), leds.buttons[i].red, leds.buttons[i].green, leds.buttons[i].blue);
   }
   hal::show_leds();
 }
@@ -187,6 +298,8 @@ void init(const sound::SampleBank& samples) {
   last_frame_us = 0;
   last_tick_us = 0;
   worst_tick_gap_us = 0;
+  shown_code.text[0] = '\0';
+  applied_brightness = -1;
   audio.init(sound_engine, kit, samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);
@@ -217,7 +330,11 @@ void tick() {
   last_frame_us = now_us;
   draw(now_us);
   hal::present();
-  light_pads(frame_position, frame_state);
+  light_leds(frame_position, frame_state);
+  if (frame.settings.brightness != applied_brightness) {
+    applied_brightness = frame.settings.brightness;
+    hal::set_brightness(applied_brightness);
+  }
 }
 
 const Model& model() { return the_model; }

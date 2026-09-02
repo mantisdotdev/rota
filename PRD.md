@@ -291,7 +291,7 @@ The player renders the device, not a web page. A visitor should see a cream inst
 
 ### 9.6 Song view (show, second press)
 
-One screen, no sub-menus (D-030). Shows the song number (1–8), the arrangement as letters grouped in fours for reading (the code itself has no spaces), the playing letter highlighted during song play, eight song tiles laid out like the pads below the screen (empty, filled, current), and one hint line: "A–D add · undo removes · hold dice clears · pads pick a song".
+One screen, no sub-menus (D-030). Shows the song number (1–8), the arrangement as letters grouped in fours for reading (the code itself has no spaces), the playing letter highlighted during song play, eight song tiles laid out like the pads below the screen (empty, filled, current), and one hint: "A–D add · undo removes · hold dice clears · pads pick a song" (drawn as four short rows on the device, D-095). The hint shows until the player has added a letter or picked a song in this power cycle, then goes.
 
 - A–D: add one cycle of that section to the arrangement, up to 64; then the status line reads "song is full". Sections do not switch.
 - undo / hold undo: remove / restore the last letter; the arrangement has its own 60 levels.
@@ -560,6 +560,8 @@ Track colours, kick to rim: #F26B1D, #F5B32B, #8FD3B0, #F0A3B8, #6C9BE8, #B79BEB
 +------------------------------------------------------+
 ```
 Screen left, knobs in a column on the right, pads in one row, round buttons below, sections between them. Everything left-aligned to the screen edge; the device is centred on the page.
+
+**Overlays.** Transient text never covers what a view shows. The top row is the view's state: bpm or title at the left, the armed button in the accent, the ring's section, song and battery at the right. The bottom row is the message row: a knob's value for a second, else the status for 1.8 s, else a footer. The tutorial's prompt rows sit above the message row. A view lays out between those rows, and the ring shrinks to fit the room left.
 
 **Motion.** Only in response to something: a pad pressing, a hit flashing and swelling for 250 ms, the playhead sweeping, a status line appearing for 1.8 s. No entrance animations, no hover effects, no ambient movement. Respect reduced-motion settings except for the playhead, which is information.
 

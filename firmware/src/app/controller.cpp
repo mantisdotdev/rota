@@ -2,20 +2,31 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <new>
 
 #include "app/audition.h"
 #include "app/params.h"
 #include "engine/edits.h"
 #include "sound/limits.h"
+#include "ui/settings.h"
 
 namespace app {
 
 namespace {
 
 constexpr int kBpmPerDetent = 1;  // D-087
+constexpr int kSwingPerDetent = 5;   // hundredths (D-096)
+constexpr int kBrightnessPerDetent = 10;
+constexpr int kBrightnessMin = 10;
+constexpr int kBrightnessMax = 100;
+constexpr int kSwingMax = 100;
+constexpr int kRootCount = 12;
+constexpr int kSleepChoices[] = {0, 5, 10, 20, 30, 60};  // minutes; 0 is never
+constexpr int kSleepChoiceCount = 6;
 
 // Status copy (Appendix D): what happened, lowercase, specific.
-const char* const kPlural[engine::kTrackCount] = {"kicks", "snares", "hats", "claps", "bass notes", "chords", "plucks", "rims"};
+// "basses" keeps "2 basses, spread evenly" inside the message row's 25 columns.
+const char* const kPlural[engine::kTrackCount] = {"kicks", "snares", "hats", "claps", "basses", "chords", "plucks", "rims"};
 const char* const kSpeedText[] = {"0.5", "1", "2"};
 const char* const kAltText[] = {"every cycle", "takes turns", "takes turns, late", "every fourth"};
 
@@ -32,6 +43,9 @@ engine::Tenths nudged(engine::Tenths value, int detents) {
   return static_cast<engine::Tenths>(moved);
 }
 
+int clamped(int value, int low, int high) { return value < low ? low : value > high ? high : value; }
+int wrapped(int value, int count) { return ((value % count) + count) % count; }
+
 // Input timestamps come off a platform clock that may be quantised to milliseconds,
 // so a release can be stamped just before its press; that is a tap, not a hold.
 uint64_t held_for(uint64_t since_us, uint64_t until_us) { return until_us > since_us ? until_us - since_us : 0; }
@@ -40,6 +54,22 @@ bool is_section(hal::Button button) { return button >= hal::Button::section_a; }
 int section_of(hal::Button button) { return static_cast<int>(button) - static_cast<int>(hal::Button::section_a); }
 bool is_armable(hal::Button button) {
   return button == hal::Button::split || button == hal::Button::swap || button == hal::Button::skip;
+}
+
+// The sections a live change reaches (D-086): the edited one, and the one still
+// playing while a switch waits for the cycle boundary. The edited one comes last,
+// so the status line reads its value.
+int edited_sections(const Model& model, int out[2]) {
+  int count = 0;
+  if (model.playing != model.current) out[count++] = model.playing;
+  out[count++] = model.current;
+  return count;
+}
+
+void announce(Status& status, uint64_t at_us, uint32_t duration_us, const char* format, va_list args) {
+  std::vsnprintf(status.text, sizeof status.text, format, args);
+  status.shown_at_us = at_us;
+  status.duration_us = duration_us;
 }
 
 }  // namespace
@@ -76,13 +106,13 @@ void Controller::handle(const hal::InputEvent& event, Model& model, Scheduler& s
   }
 }
 
-void Controller::tick(uint64_t now_us, Model& model, Scheduler& /*scheduler*/, AudioPath& /*audio*/) {
+void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   if (armed_ != kNoButton && held_for(armed_at_us_, now_us) >= kArmTimeoutUs) armed_ = kNoButton;  // T-07
   for (int i = 0; i < hal::kButtonCount; ++i) {
     Press& press = buttons_[i];
     if (press.down && !press.hold_fired && held_for(press.since_us, now_us) >= kHoldUs) {
       press.hold_fired = true;
-      button_hold(static_cast<hal::Button>(i), now_us, model);
+      button_hold(static_cast<hal::Button>(i), now_us, model, scheduler, audio);
     }
   }
 }
@@ -107,7 +137,11 @@ void Controller::pad_up(int pad, uint64_t at_us, Model& model, AudioPath& /*audi
 }
 
 void Controller::pad_tap(int pad, uint64_t at_us, Model& model) {
-  if (model.view == View::song) return;  // §9.6: pads pick songs there (io/, later)
+  if (model.view == View::song) {  // §9.6: pads pick songs there (io/, later); the pick is the gesture the hint waits for
+    model.song_hint_dismissed = true;
+    return;
+  }
+  if (model.view == View::settings) return;  // a menu, not a loop (D-096)
   if (armed_ != kNoButton) {
     apply_armed(pad, at_us, model);
     return;
@@ -178,7 +212,7 @@ void Controller::button_down(hal::Button button, uint64_t at_us, Model& model, A
   buttons_[static_cast<int>(button)] = Press{true, at_us, false, false};
   const bool per_pad = button == hal::Button::split || button == hal::Button::swap || button == hal::Button::skip ||
                        button == hal::Button::undo;
-  if (!per_pad || !any_pad_held() || model.view == View::song) return;
+  if (!per_pad || !any_pad_held() || model.view == View::song || model.view == View::settings) return;
   buttons_[static_cast<int>(button)].used = true;
   engine::Section& section = model.sections[model.current];
   for (int pad = 0; pad < engine::kTrackCount; ++pad) {
@@ -228,6 +262,7 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
         if (model.arrangement.length == 0) leave_song(model, at_us, "song is empty");
         return;
       }
+      if (model.view == View::settings) return;
       if (section.undo_levels() == 0) {
         say(model, at_us, kStatusUs, "nothing to undo");
         return;
@@ -240,12 +275,17 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
         say(model, at_us, kStatusUs, "hold dice to clear");
         return;
       }
+      if (model.view == View::settings) return;
       const int levels = section.undo_levels();
       engine::dice_fill_empty(section, *kit_, dice_.next());
       say(model, at_us, kStatusUs, section.undo_levels() != levels ? "filled the empty tracks" : "nothing to fill");
       return;
     }
     case hal::Button::show:
+      if (model.view == View::share || model.view == View::settings) {  // back to the ring (D-093, D-096)
+        model.view = View::ring;
+        return;
+      }
       model.view = model.view == View::ring ? View::text : model.view == View::text ? View::song : View::ring;
       return;
     case hal::Button::play:
@@ -256,14 +296,18 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
   }
 }
 
-void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model) {
+void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   engine::Section& section = model.sections[model.current];
   switch (button) {
     case hal::Button::split:
-      if (model.view != View::song) model.roll = true;
+      if (model.view != View::song && model.view != View::settings) model.roll = true;
       return;
     case hal::Button::undo:
-      if (model.view == View::song) return;
+      if (buttons_[static_cast<int>(hal::Button::show)].down) {  // §9.4: hold undo + show together
+        open_settings(model, hal::Button::show);
+        return;
+      }
+      if (model.view == View::song || model.view == View::settings) return;
       if (section.redo_levels() == 0) {
         say(model, at_us, kStatusUs, "nothing to redo");
         return;
@@ -277,11 +321,24 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model) {
         leave_song(model, at_us, "song cleared");
         return;
       }
+      if (model.view == View::settings) return;
       engine::dice_replace_all(section, *kit_, dice_.next());
       say(model, at_us, kStatusUs, "new loop");
       return;
+    case hal::Button::show:
+      if (buttons_[static_cast<int>(hal::Button::undo)].down) {
+        open_settings(model, hal::Button::undo);
+        return;
+      }
+      model.view = View::share;  // §9.3; stays open after the release (D-093)
+      return;
+    case hal::Button::play:
+      if (model.view == View::settings && model.settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
+        factory_reset(at_us, model, scheduler, audio);
+      }
+      return;  // tap tempo is a later session
     default:
-      return;  // tap tempo, the share view and section swapping are later sessions
+      return;  // section swapping is a later session
   }
 }
 
@@ -290,6 +347,7 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model) {
 // press adds a letter instead.
 void Controller::section_press(int target, uint64_t at_us, Model& model, AudioPath& audio) {
   if (model.view == View::song) {
+    model.song_hint_dismissed = true;  // §9.6: the hint has done its job
     if (model.arrangement.length >= engine::kMaxArrangementLength) {
       say(model, at_us, kStatusUs, "song is full");
       return;
@@ -298,6 +356,7 @@ void Controller::section_press(int target, uint64_t at_us, Model& model, AudioPa
     model.arrangement.length += 1;
     return;
   }
+  if (model.view == View::settings) return;
   const bool leaving_song = model.song_mode || model.song_start_pending;
   model.song_mode = false;
   model.song_start_pending = false;
@@ -327,7 +386,7 @@ void Controller::section_press(int target, uint64_t at_us, Model& model, AudioPa
 }
 
 // Play (§8.2, D-030): play or stop; with a section held, or in the song view, the
-// song from the top.
+// song from the top. In settings it runs the selected row (D-096).
 void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   bool section_held = false;
   for (int i = static_cast<int>(hal::Button::section_a); i < hal::kButtonCount; ++i) {
@@ -336,7 +395,12 @@ void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, 
       section_held = true;
     }
   }
-  if (section_held || model.view == View::song) {
+  if (model.view == View::settings) {
+    settings_play(at_us, model);
+    return;
+  }
+  const bool song_gesture = section_held || model.view == View::song;
+  if (song_gesture) {
     start_song(at_us, model, scheduler, audio);
     return;
   }
@@ -392,12 +456,18 @@ void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
 // Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob
 // is heard the moment it moves, so while a switch is pending it turns on the playing
 // section and on the section waiting to play alike (D-086, revisited 2026-09-03).
+// In settings the speed and filter knobs pick and set the row instead (D-096).
 
 void Controller::encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio) {
   if (detents == 0) return;
-  const bool pending = model.playing != model.current;
-  for (int pass = pending ? 0 : 1; pass < 2; ++pass) {
-    engine::Section& section = model.sections[pass == 0 ? model.playing : model.current];
+  if (model.view == View::settings && (encoder == hal::Encoder::speed || encoder == hal::Encoder::filter)) {
+    settings_turn(encoder, detents, model);
+    return;
+  }
+  int targets[2];
+  const int count = edited_sections(model, targets);
+  for (int i = 0; i < count; ++i) {
+    engine::Section& section = model.sections[targets[i]];
     if (any_pad_held()) {
       for (int pad = 0; pad < engine::kTrackCount; ++pad) {
         if (!pads_[pad].down) continue;
@@ -420,24 +490,24 @@ void Controller::track_knob(hal::Encoder encoder, int pad, int detents, uint64_t
     case hal::Encoder::speed: {
       engine::adjust_speed(section, which, detents);  // undoable: the live entry moves
       const engine::Track& after = engine::track_of(section.state(), which);
-      say(model, at_us, kKnobStatusUs, "%s speed %s", name, kSpeedText[static_cast<int>(after.speed)]);
+      show_knob(model, at_us, "%s speed %s", name, kSpeedText[static_cast<int>(after.speed)]);
       return;
     }
     case hal::Encoder::filter:
       engine::adjust_tone(section.state(), which, detents);
-      say(model, at_us, kKnobStatusUs, "%s tone %d.%d", name, track.tone / 10, track.tone % 10);
+      show_knob(model, at_us, "%s tone %d.%d", name, track.tone / 10, track.tone % 10);
       return;
     case hal::Encoder::fx:
       engine::adjust_send(section.state(), which, detents);
-      say(model, at_us, kKnobStatusUs, "%s send %d.%d", name, track.send / 10, track.send % 10);
+      show_knob(model, at_us, "%s send %d.%d", name, track.send / 10, track.send % 10);
       return;
     case hal::Encoder::chance:
       engine::adjust_track_chance(section.state(), which, detents);
-      say(model, at_us, kKnobStatusUs, "%s chance %d.%d", name, track.chance / 10, track.chance % 10);
+      show_knob(model, at_us, "%s chance %d.%d", name, track.chance / 10, track.chance % 10);
       return;
     case hal::Encoder::volume:
       engine::adjust_level(section.state(), which, detents);
-      say(model, at_us, kKnobStatusUs, "%s level %d.%d", name, track.level / 10, track.level % 10);
+      show_knob(model, at_us, "%s level %d.%d", name, track.level / 10, track.level % 10);
       return;
   }
 }
@@ -451,27 +521,119 @@ void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, 
       if (bpm < sound::kMinBpm) bpm = sound::kMinBpm;
       if (bpm > sound::kMaxBpm) bpm = sound::kMaxBpm;
       state.bpm = static_cast<uint8_t>(bpm);
-      say(model, at_us, kKnobStatusUs, "%d bpm", bpm);
+      show_knob(model, at_us, "%d bpm", bpm);
       return;
     }
     case hal::Encoder::filter:
       state.filter = nudged(state.filter, detents);
-      say(model, at_us, kKnobStatusUs, "filter %d.%d", state.filter / 10, state.filter % 10);
+      show_knob(model, at_us, "filter %d.%d", state.filter / 10, state.filter % 10);
       return;
     case hal::Encoder::fx:
       state.fx = nudged(state.fx, detents);
-      say(model, at_us, kKnobStatusUs, "fx %d.%d", state.fx / 10, state.fx % 10);
+      show_knob(model, at_us, "fx %d.%d", state.fx / 10, state.fx % 10);
       return;
     case hal::Encoder::chance:
       state.chance = nudged(state.chance, detents);
-      say(model, at_us, kKnobStatusUs, "chance %d.%d", state.chance / 10, state.chance % 10);
+      show_knob(model, at_us, "chance %d.%d", state.chance / 10, state.chance % 10);
       return;
     case hal::Encoder::volume:
       if (&section != &model.sections[model.current]) return;  // the master is the app's, set once
       model.master_volume = nudged(model.master_volume, detents);
-      say(model, at_us, kKnobStatusUs, "volume %d.%d", model.master_volume / 10, model.master_volume % 10);
+      show_knob(model, at_us, "volume %d.%d", model.master_volume / 10, model.master_volume % 10);
       return;
   }
+}
+
+// Settings (§9.4, D-096): opened by holding undo and show together, in either
+// order; the other button's own meanings do not fire. The speed knob picks the
+// row, the filter knob sets it; key and swing change the sections a knob would.
+
+void Controller::open_settings(Model& model, hal::Button other) {
+  Press& press = buttons_[static_cast<int>(other)];
+  press.used = true;
+  press.hold_fired = true;
+  model.view = View::settings;
+  model.settings.cursor = 0;
+}
+
+void Controller::settings_turn(hal::Encoder encoder, int detents, Model& model) {
+  Settings& settings = model.settings;
+  if (encoder == hal::Encoder::speed) {
+    settings.cursor = wrapped(settings.cursor + detents, ui::kSettingsRowCount);
+    return;
+  }
+  int targets[2];
+  const int count = edited_sections(model, targets);
+  switch (static_cast<ui::SettingsRow>(settings.cursor)) {
+    case ui::SettingsRow::key:
+      for (int i = 0; i < count; ++i) {
+        engine::Key& key = model.sections[targets[i]].state().key;
+        key.root = static_cast<uint8_t>(wrapped(key.root + detents, kRootCount));
+      }
+      return;
+    case ui::SettingsRow::scale:
+      for (int i = 0; i < count; ++i) {
+        engine::Key& key = model.sections[targets[i]].state().key;
+        key.mode = static_cast<engine::Mode>(wrapped(static_cast<int>(key.mode) + detents, engine::kModeCount));
+      }
+      return;
+    case ui::SettingsRow::swing:
+      for (int i = 0; i < count; ++i) {
+        uint8_t& swing = model.sections[targets[i]].state().swing;
+        swing = static_cast<uint8_t>(clamped(swing + detents * kSwingPerDetent, 0, kSwingMax));
+      }
+      return;
+    case ui::SettingsRow::brightness:
+      settings.brightness = clamped(settings.brightness + detents * kBrightnessPerDetent, kBrightnessMin, kBrightnessMax);
+      return;
+    case ui::SettingsRow::sleep: {
+      int choice = 0;
+      for (int i = 0; i < kSleepChoiceCount; ++i) {
+        if (kSleepChoices[i] == settings.sleep_minutes) choice = i;
+      }
+      settings.sleep_minutes = kSleepChoices[clamped(choice + detents, 0, kSleepChoiceCount - 1)];
+      return;
+    }
+    case ui::SettingsRow::midi_clock_in:
+      settings.midi_clock_in = detents > 0;
+      return;
+    case ui::SettingsRow::midi_clock_out:
+      settings.midi_clock_out = detents > 0;
+      return;
+    case ui::SettingsRow::sync_in:
+      settings.sync_in = detents > 0;
+      return;
+    case ui::SettingsRow::sync_out:
+      settings.sync_out = detents > 0;
+      return;
+    case ui::SettingsRow::kit:  // one kit until io/ reads the card
+    case ui::SettingsRow::firmware:
+    case ui::SettingsRow::run_tutorial:
+    case ui::SettingsRow::factory_reset:
+      return;
+  }
+}
+
+void Controller::settings_play(uint64_t at_us, Model& model) {
+  switch (static_cast<ui::SettingsRow>(model.settings.cursor)) {
+    case ui::SettingsRow::run_tutorial:
+      return;
+    case ui::SettingsRow::factory_reset:
+      say(model, at_us, kStatusUs, "hold play to reset");
+      return;
+    default:
+      return;
+  }
+}
+
+// Back to the power-on state (D-096). Rebuilt in place, so nothing the size of the
+// model touches the stack.
+void Controller::factory_reset(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
+  if (model.transport) stop_transport(model, scheduler, audio);
+  new (&model) Model(*kit_);
+  armed_ = kNoButton;
+  publish_params(model, audio);
+  say(model, at_us, kStatusUs, "reset");
 }
 
 // A held pad is muted in every section, so a copy made meanwhile and a switch
@@ -495,10 +657,15 @@ bool Controller::any_pad_held() const {
 void Controller::say(Model& model, uint64_t at_us, uint32_t duration_us, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  std::vsnprintf(model.status.text, sizeof model.status.text, format, args);
+  announce(model.status, at_us, duration_us, format, args);
   va_end(args);
-  model.status.shown_at_us = at_us;
-  model.status.duration_us = duration_us;
+}
+
+void Controller::show_knob(Model& model, uint64_t at_us, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  announce(model.knob, at_us, kKnobStatusUs, format, args);
+  va_end(args);
 }
 
 }  // namespace app
