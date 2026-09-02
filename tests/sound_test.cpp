@@ -165,6 +165,40 @@ TEST_CASE("T-65 Delay time equals the dotted eighth at the given bpm") {
     CHECK(left[21600] == doctest::Approx(1.0f));
     CHECK(right[21600] == doctest::Approx(1.0f));
   }
+
+  SUBCASE("a sweep of one bpm per block never jumps: each crossfade finishes before the next starts") {
+    // 100 Hz: one bpm at 100 bpm moves the read point 216 frames, nearly half a period,
+    // so a restarted fade would jump by almost the whole amplitude.
+    Delay swept;
+    swept.set_tempo(100.0f);
+    const int fill = 188 * kBlockSize;  // half a second, in whole blocks
+    const int sweep_blocks = 40;
+    const std::vector<float> in = sine(100.0f, 1.0f, fill + sweep_blocks * kBlockSize);
+    std::vector<float> left(in.size(), 0.0f);
+    std::vector<float> right(in.size(), 0.0f);
+    for (int at = 0; at < fill; at += kBlockSize) {
+      swept.process(in.data() + at, left.data() + at, right.data() + at, kBlockSize);
+    }
+    for (int b = 0; b < sweep_blocks; ++b) {
+      swept.set_tempo(100.0f + static_cast<float>(b));
+      const int at = fill + b * kBlockSize;
+      swept.process(in.data() + at, left.data() + at, right.data() + at, kBlockSize);
+    }
+    float largest_step = 0.0f;
+    for (size_t i = static_cast<size_t>(fill) + 1; i < left.size(); ++i) {
+      largest_step = std::max(largest_step, std::fabs(left[i] - left[i - 1]));
+    }
+    CHECK(largest_step < 0.1f);  // a 100 Hz sine moves at most 0.04 per sample even with the feedback
+    CHECK(swept.length() == 15540);  // heading to 139 bpm: 45 / 139 s
+  }
+
+  SUBCASE("bpm outside 60-180 is clamped, so there is no division by zero") {
+    Delay clamped;
+    clamped.set_tempo(0.0f);
+    CHECK(clamped.length() == 36000);
+    clamped.set_tempo(1000.0f);
+    CHECK(clamped.length() == 12000);
+  }
 }
 
 TEST_CASE("T-67 A sample voice plays the kit's sample with its pitch, start and decay") {
