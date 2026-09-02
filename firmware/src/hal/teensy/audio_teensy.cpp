@@ -21,6 +21,7 @@ constexpr unsigned int kChipClkCtrl = 0x0004;
 constexpr unsigned int kSysFs48kMclk256Fs = 0x0008;
 
 hal::AudioCallback callback_ = nullptr;
+bool started_ = false;
 float left_[hal::kAudioBlockFrames];
 float right_[hal::kAudioBlockFrames];
 
@@ -76,9 +77,22 @@ void start_audio(AudioCallback callback) {
   static_assert(static_cast<int>(AUDIO_SAMPLE_RATE_EXACT) == kAudioSampleRate,
                 "platformio.ini must set AUDIO_SAMPLE_RATE_EXACT to 48000 (D-083)");
   callback_ = callback;
+  if (started_) return;  // already running: the new callback is all that changes
+  started_ = true;
   AudioMemory(kAudioMemoryBlocks);
-  codec_.enable();
-  codec_.set_48k();
+  const bool enabled = codec_.enable();
+  const bool at_48k = enabled && codec_.set_48k();
+  if (!at_48k) {
+    // Never play at the wrong rate (§7.4, D-083): a codec that answered but refused
+    // the register stays muted; one that did not answer plays nothing anyway.
+    if (enabled) {
+      codec_.muteHeadphone();
+      codec_.muteLineout();
+    }
+    Serial.println(enabled ? "hal/teensy: the codec refused 48 kHz; outputs muted"
+                           : "hal/teensy: the codec did not answer");
+    return;
+  }
   codec_.volume(kHeadphoneVolume);
 }
 

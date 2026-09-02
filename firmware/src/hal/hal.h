@@ -55,13 +55,15 @@ bool poll();
 int read_input(InputEvent* out, int capacity);
 
 // Starts the audio output; the callback is called for every block from then on.
+// Once per process: a later call replaces the callback and starts nothing new.
 void start_audio(AudioCallback callback);
 
 // Frames the platform holds between the callback and the output: what a trigger at
 // the start of a block waits before it is heard, over and above the block itself.
 int audio_buffer_frames();
 
-// Starts a periodic timer; the callback runs off the main loop from then on.
+// Starts a periodic timer; the callback runs off the main loop from then on. Once
+// per process: a later call replaces the callback and keeps the first period.
 void start_timer(uint32_t period_us, TimerCallback callback);
 
 // Mutual exclusion between the main loop and the timer callback. Held for

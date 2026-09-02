@@ -23,6 +23,12 @@ struct ClockBase {
 ClockBase clock_base_{0, 0};
 
 IntervalTimer timer_;
+hal::TimerCallback timer_callback_ = nullptr;
+bool timer_started_ = false;
+
+void timer_trampoline() {
+  if (timer_callback_ != nullptr) timer_callback_();
+}
 
 }  // namespace
 
@@ -53,8 +59,11 @@ bool poll() {
 }
 
 void start_timer(uint32_t period_us, TimerCallback callback) {
+  timer_callback_ = callback;
+  if (timer_started_) return;  // already ticking: the new callback is all that changes
+  timer_started_ = true;
   timer_.priority(kTimerPriority);
-  timer_.begin(callback, period_us);
+  timer_.begin(timer_trampoline, period_us);
 }
 
 // One core: keeping the timer's interrupt out is the whole lock. Inside that

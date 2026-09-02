@@ -46,6 +46,7 @@ uint64_t counter_start_ = 0;
 uint64_t counter_frequency_ = 1;
 bool quit_requested = false;
 hal::TimerCallback timer_callback_ = nullptr;
+SDL_TimerID timer_ = 0;
 
 [[noreturn]] void fail(const char* what) {
   std::fprintf(stderr, "hal/sdl: %s failed: %s\n", what, SDL_GetError());
@@ -203,8 +204,10 @@ int read_input(InputEvent* out, int capacity) {
 
 void start_timer(uint32_t period_us, TimerCallback callback) {
   timer_callback_ = callback;
+  if (timer_ != 0) return;  // already ticking: the new callback is all that changes
   const Uint32 period_ms = period_us < 1000 ? 1 : period_us / 1000;
-  if (SDL_AddTimer(period_ms, timer_trampoline, nullptr) == 0) fail("SDL_AddTimer");
+  timer_ = SDL_AddTimer(period_ms, timer_trampoline, nullptr);
+  if (timer_ == 0) fail("SDL_AddTimer");
 }
 
 void lock() { SDL_LockMutex(control_lock); }

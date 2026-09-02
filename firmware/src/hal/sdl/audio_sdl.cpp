@@ -74,6 +74,7 @@ namespace hal {
 
 void start_audio(AudioCallback callback) {
   audio_callback_ = callback;
+  if (device_ != 0) return;  // already open: the new callback is all that changes
   request_device_block(kAudioBlockFrames);
   SDL_AudioSpec want{};
   want.freq = kAudioSampleRate;
