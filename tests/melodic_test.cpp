@@ -76,7 +76,7 @@ TEST_CASE("T-44 Pluck x9 in C minor") {
 }
 
 TEST_CASE("T-47 Load a code with chord note 5 on lofi, whose progression has four entries") {
-  const char* code = "PB2:lofi:100:10:2:0:15:cm:e1-e1-e1-e1-e1-e15-e1-e1";
+  const char* code = "RT2:lofi:100:10:2:0:15:cm:e1-e1-e1-e1-e1-e15-e1-e1";
   const Decoded loaded = decode(code, lofi());
   REQUIRE(loaded.ok);
   CHECK(track_of(loaded.state, Pad::chord).steps[0].note == 5);
@@ -120,7 +120,7 @@ TEST_CASE("T-57 Text view after chord x4 in C minor and in C pentatonic minor") 
   CHECK(chord_names(section.state()) == "C Bb Eb F");
 }
 
-TEST_CASE("T-58 Text view after chord x4 in keys cm, em, csm, dsm, gsdor, and pluck x3 in cm") {
+TEST_CASE("T-58 Text view after chord x4 in keys cm, em, csm, dsm, gsdor, and pluck x3 in cm and gsdor") {
   struct Expected {
     Key key;
     const char* code_key;
@@ -144,4 +144,11 @@ TEST_CASE("T-58 Text view after chord x4 in keys cm, em, csm, dsm, gsdor, and pl
   Section section = fresh_section();
   taps(section, Pad::pluck, 3);
   CHECK(pluck_names(section.state()) == "c5 eb5 g5");
+
+  Section dorian = fresh_section();
+  dorian.state().key = Key{8, Mode::dorian};
+  taps(dorian, Pad::pluck, 3);
+  // MIDI 80, 83, 87 under Gb major's signature: the octave belongs to the letter, so
+  // 83 spelled Cb is cb6, not cb5.
+  CHECK(pluck_names(dorian.state()) == "ab5 cb6 eb6");
 }

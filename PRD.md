@@ -1,6 +1,6 @@
-# Pattern Box — Product Requirements Document
+# Rota — Product Requirements Document
 
-Working title: **Pattern Box**. Version 0.1, September 2026. Owner: [you].
+Working title: **Rota** (Pattern Box until D-043). Version 0.1, September 2026. Owner: [you].
 
 This document is the source of truth for the product. It is written to be read by people and by the coding agent building it. When something here conflicts with code, the code is wrong. When something here is missing, add it here first, then build it. Decisions and their reasons live in `DECISIONS.md`.
 
@@ -14,7 +14,7 @@ A pocket instrument where you tap sounds onto a spinning ring and the loop stret
 
 Small music devices today trade off against each other: toys are outgrown in a month, deep boxes intimidate people out of the box, and all of them use a fixed step grid that produces mechanical, samey beats. Live-coding environments (TidalCycles, Strudel) solved rhythm differently: a pattern always fits one cycle, and hits subdivide and squeeze to make room. That model gives triplets, polyrhythms and evolving loops for free, but it has only ever been available as text on a laptop.
 
-Pattern Box puts that model behind eight rubber pads and four knobs. The pattern model is what makes it feel alive; the constraints (one kit, one key, four knobs) are what make it feel easy.
+Rota puts that model behind eight rubber pads and four knobs. The pattern model is what makes it feel alive; the constraints (one kit, one key, four knobs) are what make it feel easy.
 
 ## 3. Goals and success metrics
 
@@ -266,7 +266,7 @@ clap   <~ cp ~ cp ~>        (alt: b)
 chord  Cm Ab Eb Bb
 bass   bass bass
 ```
-Melodic lines show chord names, `bass` (its pitch follows the chord) and pluck note names. A chord name is the root plus `m` when the notes above the root are a minor third and a fifth; any other chord, including the quartal chords of the pentatonic modes, shows the root alone (D-031). Pitches are spelled by the key signature of the current key (D-032): a seven-note mode uses each letter name once; a pentatonic mode is spelled like its parent (pentatonic minor as natural minor, pentatonic major as major); dorian takes the signature of the major key a whole tone below its root; when the root has two names (`cs` is C# or Db) the spelling whose signature has fewer accidentals wins, and a tie goes to flats. Pluck notes use the same spelling, lowercase with the MIDI octave (`eb5`). Codes are unchanged: roots stay in sharps (`cs`). Read-only on the device in v1. The purpose is discovery and export, not editing.
+Melodic lines show chord names, `bass` (its pitch follows the chord) and pluck note names. A chord name is the root plus `m` when the notes above the root are a minor third and a fifth; any other chord, including the quartal chords of the pentatonic modes, shows the root alone (D-031). Pitches are spelled by the key signature of the current key (D-032): a seven-note mode uses each letter name once; a pentatonic mode is spelled like its parent (pentatonic minor as natural minor, pentatonic major as major); dorian takes the signature of the major key a whole tone below its root; when the root has two names (`cs` is C# or Db) the spelling whose signature has fewer accidentals wins, and a tie goes to flats. Pluck notes use the same spelling, lowercase with the octave of scientific pitch notation, which belongs to the letter (`eb5`; MIDI 83 spelled Cb is `cb6`). Codes are unchanged: roots stay in sharps (`cs`). Read-only on the device in v1. The purpose is discovery and export, not editing.
 
 ### 9.3 Share view (hold show)
 - Shows the loop's share code (§10) and a QR encoding `https://<player>/#<code>`.
@@ -308,7 +308,7 @@ The share code is the canonical description of a loop. The same code must load i
 
 ### 10.1 Grammar (v2)
 ```
-PB2:<kit>:<bpm>:<filter>:<fx>:<chance>:<swing>:<key>:<tracks>[~<lineage>]
+RT2:<kit>:<bpm>:<filter>:<fx>:<chance>:<swing>:<key>:<tracks>[~<lineage>]
 
 kit      kit id, lowercase, ≤ 12 chars           e.g. lofi
 bpm      integer 60–180
@@ -333,13 +333,13 @@ Optional per-track modifiers (level/tone/send/chance) are appended after a `,` a
 
 Codes use only `A–Z a–z 0–9 : . , - ~` (plus `;` and `/` in songs), so a code sits unchanged in a URL fragment, a byte-mode QR, a text message and a MIDI SysEx payload (D-018).
 
-Example: `PB2:lofi:96:10:3:2:15:cm:e108-e1.0.0-e10000-e1.0,7a9a-e1-e10123-e1-e1`
+Example: `RT2:lofi:96:10:3:2:15:cm:e108-e1.0.0-e10000-e1.0,7a9a-e1-e10123-e1-e1`
 
-A song is the four section bodies (everything after `PB2:`, without lineage) joined by `;`, then `/` and the arrangement, then an optional `~lineage`: `PB2S:<A>;<B>;<C>;<D>/AABABBCD`. All four sections are always written, an empty one as eight empty tracks; they must name the same kit; the arrangement is 1–64 letters A–D, one cycle each (D-025).
+A song is the four section bodies (everything after `RT2:`, without lineage) joined by `;`, then `/` and the arrangement, then an optional `~lineage`: `RT2S:<A>;<B>;<C>;<D>/AABABBCD`. All four sections are always written, an empty one as eight empty tracks; they must name the same kit; the arrangement is 1–64 letters A–D, one cycle each (D-025).
 
 ### 10.2 Constraints
 - Typical loops stay under 200 characters (a design target, not a limit; the T-05 beat is about 60). The worst case for the default kit — 16 steps on every track, all four per-track modifiers written, swing 100, a sharp dorian key and a lineage id — is 230 characters (238 with a 12-character kit id; `spec/share-format.md` G-14 shows the arithmetic), which fits a byte-mode QR code at version 10-L (271 bytes). The share view renders that QR at 3 px per module: 57 modules = 171 px, 195 px with the quiet zone, inside the 240 px screen. The player URL prefix in the QR (§9.3) has the remaining 41 bytes.
-- Song codes (`PB2S`) are never shown as a QR on the device; they are exported as text over USB only.
+- Song codes (`RT2S`) are never shown as a QR on the device; they are exported as text over USB only.
 - The device generates a 6-char id for every loop that is shared; loading a code stores its id as the child's lineage.
 
 ### 10.3 Web player
@@ -506,9 +506,9 @@ The reference kit, complete enough to write `spec/kits/lofi/kit.json` from witho
 - Chord progressions, as scale degrees of the current mode (Appendix B): minor `0 5 2 6` (i VI III VII); major `0 4 5 3` (I V vi IV); dorian `0 3 6 3` (i IV VII IV); pentatonic minor `0 4 1 2`; pentatonic major `0 4 1 3`.
 - Pluck sequence, as scale degrees with octave wrap: `0 2 4 7 9 7 4 2` (in C minor: C Eb G C′ Eb′ C′ G Eb).
 - Dice starting loops (§8.2, D-028), as share codes whose tracks are used and whose globals are ignored:
-  1. `PB2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e100-e10123-e1-e1`
-  2. `PB2:lofi:100:10:2:0:15:cm:e10-e1.0-e100000-e1.0-e10-e101-e10123-e1`
-  3. `PB2:lofi:100:10:2:0:15:cm:e1008-e1.0.0-e1000000-b1.0.0-e10000-e10123-e101-e10.`
+  1. `RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e100-e10123-e1-e1`
+  2. `RT2:lofi:100:10:2:0:15:cm:e10-e1.0-e100000-e1.0-e10-e101-e10123-e1`
+  3. `RT2:lofi:100:10:2:0:15:cm:e1008-e1.0.0-e1000000-b1.0.0-e10000-e10123-e101-e10.`
 
 ### B. Keys and scales
 Roots: 12, written with sharps in codes (`c cs d ds e f fs g gs a as b`); the screen spells them by key signature (§9.2, D-032). Modes and their intervals in semitones above the root: natural minor (default) `0 2 3 5 7 8 10`; major `0 2 4 5 7 9 11`; dorian `0 2 3 5 7 9 10`; pentatonic minor `0 3 5 7 10`; pentatonic major `0 2 4 7 9`.

@@ -11,27 +11,27 @@ struct Golden {
 };
 
 const Golden kGoldens[] = {
-    {"G-01", "PB2:lofi:100:10:2:0:15:cm:e1-e1-e1-e1-e1-e1-e1-e1"},
-    {"G-02", "PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1"},
-    {"G-03", "PB2:lofi:100:10:2:0:15:cm:e1-e1.0-e1-e1-e1-e1-e1-e1"},
-    {"G-04", "PB2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e1"},
-    {"G-05", "PB2:lofi:100:10:2:0:15:cm:e1-e1-e108-e1-e1-e1-e1-e1"},
-    {"G-06", "PB2:lofi:100:10:2:0:15:cm:e10-b1.0-e1-a1.0-e1-e1-e1-f10"},
-    {"G-07", "PB2:lofi:100:10:2:0:15:cm:e1-e1-ed00-e1-e1-e1-e1-e1"},
-    {"G-08", "PB2:lofi:100:10:2:0:15:cm:e1-e1-eh0000-e1-e1-e1-e1-e1"},
-    {"G-09", "PB2:lofi:100:10:2:0:15:cm:e100.-e1-e1-e1-e1-e1-e1-e1"},
-    {"G-10", "PB2:lofi:100:10:2:0:15:cm:e1-e1.0.0,6a1a-e1-e1-e1-e1-e1-e1"},
-    {"G-11", "PB2:lofi:96:10:3:2:15:cm:e108-e1.0.0-e10000-e1.0,7a9a-e1-e10123-e1-e1"},
-    {"G-12", "PB2:lofi:90:10:2:0:15:am:e10-e1-e1-e1-e100-e10123-e1-e1"},
-    {"G-13", "PB2:lofi:128:6:5:3:0:fsdor:e10000-e1.0.0-e10000-e1.0.0-e1-e1-e1-e1~k9z2ab"},
+    {"G-01", "RT2:lofi:100:10:2:0:15:cm:e1-e1-e1-e1-e1-e1-e1-e1"},
+    {"G-02", "RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1"},
+    {"G-03", "RT2:lofi:100:10:2:0:15:cm:e1-e1.0-e1-e1-e1-e1-e1-e1"},
+    {"G-04", "RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e1"},
+    {"G-05", "RT2:lofi:100:10:2:0:15:cm:e1-e1-e108-e1-e1-e1-e1-e1"},
+    {"G-06", "RT2:lofi:100:10:2:0:15:cm:e10-b1.0-e1-a1.0-e1-e1-e1-f10"},
+    {"G-07", "RT2:lofi:100:10:2:0:15:cm:e1-e1-ed00-e1-e1-e1-e1-e1"},
+    {"G-08", "RT2:lofi:100:10:2:0:15:cm:e1-e1-eh0000-e1-e1-e1-e1-e1"},
+    {"G-09", "RT2:lofi:100:10:2:0:15:cm:e100.-e1-e1-e1-e1-e1-e1-e1"},
+    {"G-10", "RT2:lofi:100:10:2:0:15:cm:e1-e1.0.0,6a1a-e1-e1-e1-e1-e1-e1"},
+    {"G-11", "RT2:lofi:96:10:3:2:15:cm:e108-e1.0.0-e10000-e1.0,7a9a-e1-e10123-e1-e1"},
+    {"G-12", "RT2:lofi:90:10:2:0:15:am:e10-e1-e1-e1-e100-e10123-e1-e1"},
+    {"G-13", "RT2:lofi:128:6:5:3:0:fsdor:e10000-e1.0.0-e10000-e1.0.0-e1-e1-e1-e1~k9z2ab"},
     {"G-14",
-     "PB2:lofi:180:10:10:10:100:csdor:fhoooooooooooooooo,7959-fhoooooooooooooooo,7959-fhoooooooooooooooo,7959-"
+     "RT2:lofi:180:10:10:10:100:csdor:fhoooooooooooooooo,7959-fhoooooooooooooooo,7959-fhoooooooooooooooo,7959-"
      "fhoooooooooooooooo,7959-fhvvvvvvvvvvvvvvvv,7959-fhvvvvvvvvvvvvvvvv,7959-fhvvvvvvvvvvvvvvvv,7959-"
      "fhoooooooooooooooo,7959~zzzzzz"},
 };
 
 const char* kSongGolden =
-    "PB2S:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e100-e10123-e1-e1;"
+    "RT2S:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e100-e10123-e1-e1;"
     "lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e100-e10123-e10123-e1;"
     "lofi:100:10:2:0:15:cm:e10-e1.0-e100000-e1.0-e10-e101-e10123-e1;"
     "lofi:100:10:2:0:15:cm:e1-e1-e1-e1-e1-e1-e1-e1/AABABBCD~k9z2ab";
@@ -197,30 +197,30 @@ TEST_CASE("Golden codes decode to the states their descriptions give") {
 
 TEST_CASE("T-16 Load a code with an unknown future field") {
   SUBCASE("an extra field after the tracks") {
-    const Decoded result = decode("PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1:future9", lofi());
+    const Decoded result = decode("RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1:future9", lofi());
     REQUIRE(result.ok);
     CHECK(steps_text(result.state, Pad::kick) == "0");
     CHECK(code_of(result.state) == kGoldens[1].code);
   }
   SUBCASE("an extra field before the lineage") {
-    const Decoded result = decode("PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1:future9~k9z2ab", lofi());
+    const Decoded result = decode("RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1:future9~k9z2ab", lofi());
     REQUIRE(result.ok);
     CHECK(std::string(result.state.lineage) == "k9z2ab");
   }
   SUBCASE("characters after the four modifier digits") {
-    const Decoded result = decode("PB2:lofi:100:10:2:0:15:cm:e10,6a1axyz-e1-e1-e1-e1-e1-e1-e1", lofi());
+    const Decoded result = decode("RT2:lofi:100:10:2:0:15:cm:e10,6a1axyz-e1-e1-e1-e1-e1-e1-e1", lofi());
     REQUIRE(result.ok);
     CHECK(track_of(result.state, Pad::kick).level == 6);
-    CHECK(code_of(result.state) == "PB2:lofi:100:10:2:0:15:cm:e10,6a1a-e1-e1-e1-e1-e1-e1-e1");
+    CHECK(code_of(result.state) == "RT2:lofi:100:10:2:0:15:cm:e10,6a1a-e1-e1-e1-e1-e1-e1-e1");
   }
-  SUBCASE("a code that is not PB2 does not load") {
-    CHECK_FALSE(decode("PB3:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);
+  SUBCASE("a code that is not RT2 does not load") {
+    CHECK_FALSE(decode("RT3:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);
     CHECK_FALSE(decode("", lofi()).ok);
-    CHECK_FALSE(decode("PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1", lofi()).ok);  // seven tracks
-    CHECK_FALSE(decode("PB2:lofi:300:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // bpm out of range
-    CHECK_FALSE(decode("PB2:lofi:100:10:2:0:15:cm:e1w-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // step char past v
-    CHECK_FALSE(decode("PB2:lofi:100:10:2:0:15:cm:e100000000000000000-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // 17 steps
-    CHECK_FALSE(decode("PB2:lofi:100:10:2:0:15:xm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // no such root
+    CHECK_FALSE(decode("RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1", lofi()).ok);  // seven tracks
+    CHECK_FALSE(decode("RT2:lofi:300:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // bpm out of range
+    CHECK_FALSE(decode("RT2:lofi:100:10:2:0:15:cm:e1w-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // step char past v
+    CHECK_FALSE(decode("RT2:lofi:100:10:2:0:15:cm:e100000000000000000-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // 17 steps
+    CHECK_FALSE(decode("RT2:lofi:100:10:2:0:15:xm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).ok);  // no such root
   }
 }
 
@@ -275,9 +275,9 @@ TEST_CASE("T-51 Encode a song: four full sections, arrangement AABABBCD, a linea
   }
 }
 
-TEST_CASE("T-52 Load PB2:jazz:... on a device or player that has only lofi") {
+TEST_CASE("T-52 Load RT2:jazz:... on a device or player that has only lofi") {
   // The status line "no kit jazz, using lofi" is app/; the engine reports the substitution.
-  const Decoded result = decode("PB2:jazz:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e10-e1-e1", lofi());
+  const Decoded result = decode("RT2:jazz:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e10-e1-e1", lofi());
   REQUIRE(result.ok);
   CHECK(result.kit_substituted);
   CHECK(std::string(result.requested_kit) == "jazz");
@@ -285,7 +285,7 @@ TEST_CASE("T-52 Load PB2:jazz:... on a device or player that has only lofi") {
   CHECK(track_of(result.state, Pad::chord).send == 4);  // lofi's default for the omitted group
   CHECK(track_of(result.state, Pad::kick).send == 1);
   CHECK(hit_times(events_of(result.state), Pad::kick) == "0");
-  CHECK(code_of(result.state) == "PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e10-e1-e1");
+  CHECK(code_of(result.state) == "RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e10-e1-e1");
 
   std::string song = kSongGolden;
   for (size_t at = song.find("lofi:"); at != std::string::npos; at = song.find("lofi:", at + 1)) {

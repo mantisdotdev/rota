@@ -56,7 +56,8 @@ ChordName chord_name(Key key, int degree);
 // A pitch spelled by the key signature of `key` (D-032): seven-note modes use each
 // letter once; pentatonic modes spell like their parent; dorian takes the major
 // key a whole tone below; a root with two names takes the one with fewer
-// accidentals, ties going to flats. Lowercase with the MIDI octave, C4 = 60: `eb5`.
+// accidentals, ties going to flats. Lowercase with the octave of scientific pitch
+// notation, which belongs to the letter (C4 = 60): `eb5`, and MIDI 83 spelled Cb is `cb6`.
 PitchName pitch_name(Key key, uint8_t midi);
 
 }  // namespace engine

@@ -1,10 +1,10 @@
-# Host build of the Pattern Box sources (PRD §12): the same firmware/src tree with
+# Host build of the Rota sources (PRD §12): the same firmware/src tree with
 # hal/sdl/ instead of hal/teensy/. Configure from the repo root:
 #   cmake -S host -B build && cmake --build build
 # Every executable lands directly in build/ so ./build/tests, ./build/simulator and
 # ./build/render work as written in CLAUDE.md.
 cmake_minimum_required(VERSION 3.20)
-project(patternbox_host LANGUAGES CXX)
+project(rota_host LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

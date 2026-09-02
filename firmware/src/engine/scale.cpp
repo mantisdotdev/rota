@@ -60,7 +60,6 @@ constexpr char kSharpMark = '#';
 constexpr char kFlatMark = 'b';
 constexpr char kMinorMark = 'm';
 constexpr char kLowercaseOffset = 'a' - 'A';
-constexpr int kMidiOctaveOffset = 1;  // C4 = 60, so the MIDI octave is midi / 12 − 1
 
 struct Signature {
   int sharps;
@@ -152,7 +151,11 @@ PitchName pitch_name(Key key, uint8_t midi) {
   int length = 0;
   name.text[length++] = static_cast<char>(kLetters[spelling.letter] + kLowercaseOffset);
   length += put_accidental(name.text + length, spelling.accidental);
-  const int octave = midi / kSemitonesPerOctave - kMidiOctaveOffset;  // −1 to 9
+  // The octave belongs to the letter (scientific pitch notation, C4 = 60), so it is
+  // read off the letter's natural: Cb6 is MIDI 83, B#3 is MIDI 60. The offset keeps
+  // the division positive down to MIDI 0 (C-1).
+  const int natural = midi - spelling.accidental + kSemitonesPerOctave;
+  const int octave = natural / kSemitonesPerOctave - 2;  // −1 to 9
   if (octave < 0) {
     name.text[length++] = '-';
     name.text[length++] = static_cast<char>('0' - octave);

@@ -4,7 +4,7 @@
 #include "engine/limits.h"
 #include "engine/state.h"
 
-// PB2 share codes (PRD §10, spec/share-format.md). The code is the contract
+// RT2 share codes (PRD §10, spec/share-format.md). The code is the contract
 // between web, device and tests: decode → encode of a canonical code is
 // byte-identical, and unknown future fields are ignored (T-15, T-16).
 namespace engine {

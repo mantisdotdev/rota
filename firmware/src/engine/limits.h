@@ -24,7 +24,7 @@ constexpr int kMaxEventsPerCycle = kTrackCount * kMaxEventsPerTrack;
 
 // Share-code buffers, NUL included. A section code is at most 238 characters
 // (share-format §6); a song is four section bodies of at most 227, three `;`,
-// `PB2S:`, `/`, 64 arrangement letters and a 7-character lineage: 988 (§5).
+// `RT2S:`, `/`, 64 arrangement letters and a 7-character lineage: 988 (§5).
 constexpr int kSectionCodeCapacity = 256;
 constexpr int kSongCodeCapacity = 1024;
 

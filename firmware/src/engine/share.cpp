@@ -6,8 +6,8 @@ namespace engine {
 
 namespace {
 
-constexpr const char* kSectionPrefix = "PB2:";
-constexpr const char* kSongPrefix = "PB2S:";
+constexpr const char* kSectionPrefix = "RT2:";
+constexpr const char* kSongPrefix = "RT2S:";
 constexpr char kFieldSeparator = ':';
 constexpr char kTrackSeparator = '-';
 constexpr char kModifierSeparator = ',';

@@ -35,7 +35,7 @@ namespace hal {
 void init() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) fail("SDL_Init");
   std::atexit(SDL_Quit);
-  window = SDL_CreateWindow("Pattern Box", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+  window = SDL_CreateWindow("Rota", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                             kScreenWidth * kWindowScale, kScreenHeight * kWindowScale,
                             SDL_WINDOW_SHOWN);
   if (window == nullptr) fail("SDL_CreateWindow");

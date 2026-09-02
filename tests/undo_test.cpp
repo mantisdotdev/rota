@@ -68,7 +68,7 @@ TEST_CASE("T-13 Undo after any edit") {
   }
   SUBCASE("load") {
     const State before = section.state();
-    load(section, decode("PB2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).state);
+    load(section, decode("RT2:lofi:100:10:2:0:15:cm:e10-e1-e1-e1-e1-e1-e1-e1", lofi()).state);
     REQUIRE(steps_text(section.state(), Pad::kick) == "0");
     section.undo();
     CHECK(section.state() == before);
