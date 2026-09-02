@@ -107,7 +107,7 @@ def degree_list(values, what):
 def validate_sample(kit_dir, source, what):
     """The WAV a sample pad names must sit in the kit folder and be 16-bit 48 kHz mono
     PCM, 1 to MAX_SAMPLE_FRAMES frames, so sound/ can play it as it is."""
-    if not isinstance(source, str) or not source or os.path.basename(source) != source:
+    if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
         raise KitError(f"{what}: source must be a file name inside the kit folder, got {source!r}")
     path = os.path.join(kit_dir, source)
     try:

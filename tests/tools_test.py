@@ -106,8 +106,9 @@ class T76KitSamples(unittest.TestCase):
         self.assertEqual(self.wavs_in_folder(), [])
 
     def test_the_generator_refuses_a_source_that_is_not_a_bare_file_name(self):
-        for source in ["../kick.wav", "sub/kick.wav", "", None]:
-            self.kit["pads"][0]["source"] = source
+        # On the last sample pad, so a check that came after writing would have left files behind.
+        for source in ["../kick.wav", "sub/kick.wav", "", ".", "..", None]:
+            self.kit["pads"][7]["source"] = source
             code, error = quiet(sample_generator.main, ["x", self.write_kit()])
             self.assertEqual(code, sample_generator.EXIT_FAILED, repr(source))
             self.assertIn("source must be a file name inside the kit folder", error)
@@ -137,6 +138,8 @@ class T76KitSamples(unittest.TestCase):
             "text.wav": "file does not start with RIFF id",
             "missing.wav": "No such file",
             "../lofi/kick.wav": "source must be a file name inside the kit folder",
+            ".": "source must be a file name inside the kit folder",
+            "..": "source must be a file name inside the kit folder",
         }
         for source, reason in expected.items():
             with self.assertRaises(kit_builder.KitError, msg=source) as caught:

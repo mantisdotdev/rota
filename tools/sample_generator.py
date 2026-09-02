@@ -175,7 +175,7 @@ def main(argv):
             print(f"sample_generator: no recipe for a sample pad named {name!r}", file=sys.stderr)
             return EXIT_FAILED
         source = pad.get("source")
-        if not isinstance(source, str) or not source or os.path.basename(source) != source:
+        if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
             print(f"sample_generator: pad {name}: source must be a file name inside the kit folder, got {source!r}", file=sys.stderr)
             return EXIT_FAILED
     for pad in sample_pads:
