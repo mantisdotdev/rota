@@ -274,8 +274,9 @@ TEST_CASE("T-81 Emptying the arrangement under a playing song ends song play wit
   }
   CHECK_FALSE(w.model().song_mode);
   CHECK(w.model().transport);
-  w.run_until(w.cycle_start(4));  // two more cycle boundaries: A plays on live
+  w.run_until(w.cycle_start(4));  // from the very next cycle boundary A plays on live
   CHECK(w.model().playing == 0);
+  CHECK(w.times_in_cycle(Pad::kick, 2) == "0");
   CHECK(w.times_in_cycle(Pad::kick, 3) == "0");
 
   w.press(Button::play);  // in the song view with nothing to play
