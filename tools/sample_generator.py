@@ -170,8 +170,13 @@ def main(argv):
     sample_pads = [pad for pad in kit.get("pads", []) if pad.get("voice") == "sample"]
     # Every pad is checked before any file is written, so a bad kit leaves no half-written folder.
     for pad in sample_pads:
-        if pad.get("name") not in RECIPES:
-            print(f"sample_generator: no recipe for a sample pad named {pad.get('name')!r}", file=sys.stderr)
+        name = pad.get("name")
+        if name not in RECIPES:
+            print(f"sample_generator: no recipe for a sample pad named {name!r}", file=sys.stderr)
+            return EXIT_FAILED
+        source = pad.get("source")
+        if not isinstance(source, str) or not source or os.path.basename(source) != source:
+            print(f"sample_generator: pad {name}: source must be a file name inside the kit folder, got {source!r}", file=sys.stderr)
             return EXIT_FAILED
     for pad in sample_pads:
         path = os.path.join(kit_dir, pad["source"])

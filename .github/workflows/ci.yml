@@ -28,6 +28,9 @@ jobs:
           done
           git add -N firmware/src/engine/kits
           git diff --exit-code -- firmware/src/engine/kits
+      - name: Python tools (T-76)
+        # The sample generator and the kit builder's WAV checks, tested where they live.
+        run: python3 -m unittest discover -s tests -p 'tools_test.py' -v
       - name: Install SDL2
         run: |
           sudo apt-get update
