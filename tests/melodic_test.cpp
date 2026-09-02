@@ -39,6 +39,9 @@ TEST_CASE("T-41 Chord x5") {
   CHECK(steps_text(section.state(), Pad::chord) == "01230");
   CHECK(chord_root_classes(events_of(section.state())) == "0 8 3 10 0");
   CHECK(track_code(section.state(), Pad::chord) == "e101230");
+  // The position the next tap takes, which the app auditions before the beat (D-036, D-085).
+  CHECK(next_note_position(section.state(), Pad::chord, lofi()) == 1);
+  CHECK(next_note_position(section.state(), Pad::kick, lofi()) == 0);
 }
 
 TEST_CASE("T-43 Chord Cm Ab Eb Bb; change key from C minor to A minor in settings") {
@@ -73,6 +76,8 @@ TEST_CASE("T-44 Pluck x9 in C minor") {
   // Degrees 0 2 4 7 9 7 4 2 in octave 5: C Eb G C' Eb' C' G Eb, then position 0 again.
   CHECK(notes_on(list, Pad::pluck) == "72 75 79 84 87 84 79 75 72");
   for (const Event& e : events_on(list, Pad::pluck)) CHECK(in_scale(section.state().key, e.note));
+  CHECK(next_note_position(section.state(), Pad::pluck, lofi()) == 1);  // the tenth tap's position (D-036)
+  CHECK(next_note_position(fresh_section().state(), Pad::pluck, lofi()) == 0);
 }
 
 TEST_CASE("T-47 Load a code with chord note 5 on lofi, whose progression has four entries") {

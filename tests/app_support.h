@@ -45,6 +45,7 @@ struct World {
     const sound::SampleBank silent{};
     app::init(silent);
     timer_frames = static_cast<int64_t>(hal_fake::timer_period_us()) * sound::kSampleRate / 1000000;
+    REQUIRE(timer_frames > 0);  // a period under 21 us would never advance the world
     REQUIRE(hal_fake::audio_callback() != nullptr);
     REQUIRE(hal_fake::timer_callback() != nullptr);
   }
