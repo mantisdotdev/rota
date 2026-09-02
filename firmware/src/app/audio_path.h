@@ -62,9 +62,10 @@ struct FiredLog {
 class AudioPath {
  public:
   AudioPath();
-  // Back to the state after construction: empty queues, position 0. Call only
-  // while the audio callback is stopped: it drains the queues the audio side owns.
-  void reset();
+  // Back to the state after construction: empty queues, the position at `blocks`
+  // (0 in the app; a test may start near the 32-bit wrap, T-83). Call only while
+  // the audio callback is stopped: it drains the queues the audio side owns.
+  void reset(uint64_t blocks = 0);
   // `engine` lives wherever the platform put it (HAL_BULK_MEMORY); frames in the
   // bank stay owned by the caller.
   void init(sound::Engine& engine, const engine::Kit& kit, const sound::SampleBank& samples);
@@ -72,8 +73,11 @@ class AudioPath {
   // The hal::AudioCallback body.
   void render(float* left, float* right);
 
-  // Frames rendered so far: the start of the next block. Readable anywhere.
-  int64_t position() const;
+  // Frames rendered so far: the start of the next block. From the control side,
+  // under hal::lock(): the audio side publishes a 32-bit block count, which wraps
+  // after 2^32 blocks (132 days at 48 kHz), and the readers fold it into 64 bits
+  // between them, so the clock never goes backwards (T-83).
+  int64_t position();
 
   // Audition latency (§7.4, T-78): press to render pickup, measured on every
   // audition that carried a press time. Returns false until a new one lands.
@@ -89,7 +93,9 @@ class AudioPath {
   int collect(int64_t block_start, sound::Trigger* triggers);
 
   sound::Engine* engine_;
-  std::atomic<uint32_t> blocks_;
+  uint64_t audio_blocks_;              // the audio side's own count
+  std::atomic<uint32_t> low_blocks_;   // its low 32 bits, published after every block
+  uint64_t control_blocks_;            // the control side's 64-bit fold of it
   std::atomic<uint32_t> latency_last_us_;
   std::atomic<uint32_t> latency_worst_us_;
   std::atomic<uint32_t> latency_count_;

@@ -42,6 +42,7 @@ uint64_t last_frame_us = 0;
 uint64_t last_tick_us = 0;
 uint32_t worst_tick_gap_us = 0;  // since the last latency report: bounds what the loop adds before a press is read
 engine::State frame_state;       // the edited section as of the last frame, copied under the lock
+int64_t frame_position = 0;      // the audio position read for that frame
 ui::Flash flashes[ui::kMaxFlashes];
 char footer[kStatusCapacity + engine::kMaxArrangementLength];
 char line[kLineCapacity];
@@ -118,6 +119,7 @@ void draw(uint64_t now_us) {
   hal::lock();
   frame_state = the_model.sections[the_model.current].state();
   const int64_t position = audio.position();
+  frame_position = position;
   const engine::Fraction playhead = scheduler.playhead(position);
   const uint32_t cycle_index = scheduler.cycle_index();
   const bool playing = the_model.transport;
@@ -213,11 +215,16 @@ void tick() {
   last_frame_us = now_us;
   draw(now_us);
   hal::present();
-  light_pads(audio.position(), frame_state);
+  light_pads(frame_position, frame_state);
 }
 
 const Model& model() { return the_model; }
 const FiredLog& fired_log() { return the_fired_log; }
-int64_t audio_position() { return audio.position(); }
+int64_t audio_position() {
+  hal::lock();
+  const int64_t position = audio.position();
+  hal::unlock();
+  return position;
+}
 
 }  // namespace app

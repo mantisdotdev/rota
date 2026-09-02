@@ -1,9 +1,11 @@
 // The app under the scripted input harness (tests/app_support.h): the scheduler,
 // the input grammar and the audio path together, on a fake HAL with a fake clock.
-// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82.
+// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82, T-83.
+#include <memory>
 #include <string>
 
 #include "app_support.h"
+#include "engine/kits/lofi.h"
 
 using namespace app_support;
 
@@ -298,4 +300,25 @@ TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over
   w.play();  // a fresh cycle whose hits all fire
   w.run_until(w.cycle_start(1));
   CHECK(w.times_in_cycle(Pad::kick, 0) == "0 1/4 1/2 3/4");
+}
+
+TEST_CASE("T-83 The audio clock carries on past the 32-bit block count") {
+  hal_fake::reset();
+  auto engine = std::make_unique<sound::Engine>();
+  auto audio = std::make_unique<app::AudioPath>();
+  const sound::SampleBank silent{};
+  audio->init(*engine, engine::kits::kLofi, silent);
+  const uint64_t wrap = uint64_t{1} << 32;  // 132 days of blocks at 48 kHz
+  audio->reset(wrap - 2);
+  float left[kBlock];
+  float right[kBlock];
+  int64_t last = audio->position();
+  CHECK(last == static_cast<int64_t>((wrap - 2) * static_cast<uint64_t>(kBlock)));
+  for (int i = 0; i < 4; ++i) {
+    audio->render(left, right);
+    const int64_t now = audio->position();
+    CHECK(now == last + kBlock);  // never backwards, across the wrap
+    last = now;
+  }
+  CHECK(last == static_cast<int64_t>((wrap + 2) * static_cast<uint64_t>(kBlock)));
 }

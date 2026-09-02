@@ -16,14 +16,16 @@ AudioPath::AudioPath()
       params(),
       live_generation(0),
       engine_(nullptr),
-      blocks_(0),
+      audio_blocks_(0),
+      low_blocks_(0),
+      control_blocks_(0),
       latency_last_us_(0),
       latency_worst_us_(0),
       latency_count_(0),
       latency_seen_(0),
       block_{} {}
 
-void AudioPath::reset() {
+void AudioPath::reset(uint64_t blocks) {
   ScheduledTrigger trigger;
   while (scheduled.pop(trigger)) {
   }
@@ -35,7 +37,9 @@ void AudioPath::reset() {
   }
   sound::Params stale;
   params.take(stale);
-  blocks_.store(0);
+  audio_blocks_ = blocks;
+  low_blocks_.store(static_cast<uint32_t>(blocks));
+  control_blocks_ = blocks;
   latency_last_us_.store(0);
   latency_worst_us_.store(0);
   latency_count_.store(0);
@@ -47,8 +51,12 @@ void AudioPath::init(sound::Engine& engine, const engine::Kit& kit, const sound:
   engine_->init(kit, samples);
 }
 
-int64_t AudioPath::position() const {
-  return static_cast<int64_t>(blocks_.load(std::memory_order_acquire)) * sound::kBlockSize;
+// Readers come at least every few milliseconds, so the difference between the
+// published low bits and the fold's own low bits is the blocks rendered since.
+int64_t AudioPath::position() {
+  const uint32_t low = low_blocks_.load(std::memory_order_acquire);
+  control_blocks_ += static_cast<uint32_t>(low - static_cast<uint32_t>(control_blocks_));
+  return static_cast<int64_t>(control_blocks_) * sound::kBlockSize;
 }
 
 // Auditions first, at the block's first frame; then every scheduled trigger due
@@ -93,7 +101,7 @@ int AudioPath::collect(int64_t block_start, sound::Trigger* triggers) {
 }
 
 void AudioPath::render(float* left, float* right) {
-  const int64_t block_start = position();
+  const int64_t block_start = static_cast<int64_t>(audio_blocks_) * sound::kBlockSize;
   sound::Trigger triggers[kMaxTriggersPerBlock];
   const int count = collect(block_start, triggers);
   sound::Params fresh;
@@ -101,7 +109,8 @@ void AudioPath::render(float* left, float* right) {
   engine_->render(triggers, count, block_);
   std::memcpy(left, block_.left, sizeof block_.left);
   std::memcpy(right, block_.right, sizeof block_.right);
-  blocks_.fetch_add(1, std::memory_order_release);
+  audio_blocks_ += 1;
+  low_blocks_.store(static_cast<uint32_t>(audio_blocks_), std::memory_order_release);
 }
 
 bool AudioPath::take_latency(uint32_t& last_us, uint32_t& worst_us, uint32_t& count) {
