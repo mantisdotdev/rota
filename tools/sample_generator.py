@@ -178,6 +178,10 @@ def main(argv):
         if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
             print(f"sample_generator: pad {name}: source must be a file name inside the kit folder, got {source!r}", file=sys.stderr)
             return EXIT_FAILED
+        destination = os.path.join(kit_dir, source)
+        if os.path.islink(destination) or os.path.isdir(destination):
+            print(f"sample_generator: pad {name}: {source} is a directory or a link; refusing to write over it", file=sys.stderr)
+            return EXIT_FAILED
     for pad in sample_pads:
         path = os.path.join(kit_dir, pad["source"])
         write_wav(path, RECIPES[pad["name"]]())

@@ -105,19 +105,22 @@ def degree_list(values, what):
 
 
 def validate_sample(kit_dir, source, what):
-    """The WAV a sample pad names must sit in the kit folder and be 16-bit 48 kHz mono
-    PCM, 1 to MAX_SAMPLE_FRAMES frames, so sound/ can play it as it is."""
+    """The WAV a sample pad names must be a plain file in the kit folder (no path, no
+    link) and 16-bit 48 kHz mono PCM of 1 to MAX_SAMPLE_FRAMES frames, so sound/ can
+    play it as it is."""
     if not isinstance(source, str) or source in ("", ".", "..") or os.path.basename(source) != source:
         raise KitError(f"{what}: source must be a file name inside the kit folder, got {source!r}")
     path = os.path.join(kit_dir, source)
+    if os.path.islink(path):
+        raise KitError(f"{what}: {source} is a link; a kit sample is a file inside the kit folder")
     try:
         with wave.open(path, "rb") as sample:
             channels = sample.getnchannels()
             width = sample.getsampwidth()
             rate = sample.getframerate()
             frames = sample.getnframes()
-    except (OSError, EOFError, wave.Error) as error:
-        raise KitError(f"{what}: {source}: {error}") from error
+    except (OSError, EOFError, ValueError, wave.Error) as error:  # ValueError: a NUL in the name
+        raise KitError(f"{what}: {source!r}: {error}") from error
     if (channels, width, rate) != (1, SAMPLE_WIDTH_BYTES, SAMPLE_RATE):
         raise KitError(
             f"{what}: {source} must be 16-bit {SAMPLE_RATE} Hz mono, got {width * 8}-bit {rate} Hz {channels} channel(s)"
