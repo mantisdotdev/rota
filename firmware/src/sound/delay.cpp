@@ -31,6 +31,7 @@ int Delay::frames_of(float bpm) {
 }
 
 void Delay::set_tempo(float bpm) {
+  if (!std::isfinite(bpm)) return;  // a NaN would slip through the clamp into lround
   pending_length_ = frames_of(bpm);
   if (crossfade_left_ == 0 && pending_length_ != length_) begin_crossfade(pending_length_);
 }

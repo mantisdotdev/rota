@@ -1,5 +1,6 @@
 // The sound engine stage by stage: T-63–T-65, T-67–T-74, T-77 (spec/scenarios.md).
 #include <cmath>
+#include <limits>
 
 #include "sound/delay.h"
 #include "sound/dynamics.h"
@@ -192,11 +193,15 @@ TEST_CASE("T-65 Delay time equals the dotted eighth at the given bpm") {
     CHECK(swept.length() == 15540);  // heading to 139 bpm: 45 / 139 s
   }
 
-  SUBCASE("bpm outside 60-180 is clamped, so there is no division by zero") {
+  SUBCASE("bpm outside 60-180 is clamped, so there is no division by zero; a NaN changes nothing") {
     Delay clamped;
     clamped.set_tempo(0.0f);
     CHECK(clamped.length() == 36000);
     clamped.set_tempo(1000.0f);
+    CHECK(clamped.length() == 12000);
+    clamped.set_tempo(std::numeric_limits<float>::quiet_NaN());
+    CHECK(clamped.length() == 12000);
+    clamped.set_tempo(std::numeric_limits<float>::infinity());
     CHECK(clamped.length() == 12000);
   }
 }

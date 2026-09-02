@@ -11,7 +11,7 @@ namespace sound {
 class Delay {
  public:
   Delay();
-  // bpm outside §6.3's 60–180 is clamped to it.
+  // bpm outside §6.3's 60–180 is clamped to it; a NaN or infinite bpm changes nothing.
   void set_tempo(float bpm);
   // The dotted eighth in frames the delay is at, or heading to.
   int length() const { return pending_length_; }
