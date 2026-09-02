@@ -80,6 +80,13 @@ struct World {
 
   void run_for(int64_t count) { run_until(frames + count); }
 
+  // A stalled timer thread: no tick until the first period boundary at or after
+  // `frame`. Returns when that tick will fire.
+  int64_t skip_timer_until(int64_t frame) {
+    timer_at = (frame + timer_frames - 1) / timer_frames * timer_frames;
+    return timer_at;
+  }
+
   void input(hal::InputKind kind, int index, int detents = 0) {
     hal_fake::set_time_us(us_of(frames));
     hal_fake::push(hal::InputEvent{kind, static_cast<uint8_t>(index), static_cast<int8_t>(detents), us_of(frames)});

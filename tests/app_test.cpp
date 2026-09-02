@@ -1,6 +1,6 @@
 // The app under the scripted input harness (tests/app_support.h): the scheduler,
 // the input grammar and the audio path together, on a fake HAL with a fake clock.
-// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82, T-83.
+// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82, T-83, T-84.
 #include <memory>
 #include <string>
 
@@ -321,4 +321,42 @@ TEST_CASE("T-83 The audio clock carries on past the 32-bit block count") {
     last = now;
   }
   CHECK(last == static_cast<int64_t>((wrap + 2) * static_cast<uint64_t>(kBlock)));
+}
+
+TEST_CASE("T-84 Hold split and a pad: the roll retriggers at every 1/16, handed over in sample order") {
+  World w;
+  w.tap(Pad::kick, 15);  // hits 7680 frames apart: the second lies 480 frames after the 1/16 point at 7200
+  w.button_down(Button::split);
+  w.run_for(kSecond / 2);  // past the hold threshold: the roll is on
+  w.pad_down(Pad::hat);
+  w.play();
+  w.run_until(w.cycle_start(2));
+  CHECK(w.times_in_cycle(Pad::hat, 1) ==
+        "0 1/16 1/8 3/16 1/4 5/16 3/8 7/16 1/2 9/16 5/8 11/16 3/4 13/16 7/8 15/16");
+  CHECK(w.times_in_cycle(Pad::kick, 1) == "0 1/15 2/15 1/5 4/15 1/3 2/5 7/15 8/15 3/5 2/3 11/15 4/5 13/15 14/15");
+
+  // The timer stalls across the 1/16 point at 7200; when it wakes, the kick at 7680 is
+  // due in the same window. The late roll hit must sound in the very next block, not
+  // behind the kick handed over after it.
+  const int64_t grid = w.cycle_start(2) + 7200;
+  const int64_t kick = grid + 480;
+  w.run_until(grid - 8 * kBlock);
+  const int64_t tick = w.skip_timer_until(grid + 32);
+  const int64_t expected = (tick + kBlock - 1) / kBlock * kBlock;  // the block after the tick
+  REQUIRE(expected < kick);
+  w.run_until(kick + 3 * kBlock);
+  std::vector<int64_t> late_roll;
+  for (const app::Fired& hit : w.fired) {
+    if (hit.event.track == Pad::hat && hit.sample >= grid && hit.sample <= kick) late_roll.push_back(hit.sample);
+  }
+  CHECK(late_roll == std::vector<int64_t>{expected});
+  std::vector<int64_t> kicks;
+  for (const app::Fired& hit : w.fired) {
+    if (hit.event.track == Pad::kick && hit.sample >= grid && hit.sample <= kick) kicks.push_back(hit.sample);
+  }
+  CHECK(kicks == std::vector<int64_t>{kick});
+
+  w.button_up(Button::split);  // the roll ends with the hold
+  w.run_until(w.cycle_start(4));
+  CHECK(w.times_in_cycle(Pad::hat, 3) == "");
 }

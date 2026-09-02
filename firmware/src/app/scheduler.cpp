@@ -119,38 +119,41 @@ void Scheduler::cross_cycle(Model& model, bool first) {
   }
 }
 
-// Hands over every hit with a sample in [scheduled_until_, until): the pattern's,
-// skipping tracks whose pad is held (§8.1, mute), then the roll's. false when the
-// queue refused one; next_event_, next_roll_ and next_roll_track_ then point at
-// it, so the retry pushes nothing twice.
+// Hands over every hit with a sample in [scheduled_until_, until) in sample order,
+// the pattern's (skipping tracks whose pad is held, §8.1) merged with the roll's,
+// so the earliest hit is always at the head of the audio side's queue (T-84).
+// false when the queue refused one; next_event_, next_roll_ and next_roll_track_
+// then point at it, so the retry pushes nothing twice.
 bool Scheduler::push_window(const Model& model, int64_t until, TriggerQueue& out) {
   const engine::State& held = model.sections[model.current].state();
-  while (next_event_ < list_.count) {
+  const int64_t roll_step = beat_frames_ / kRollsPerBeat;
+  for (;;) {
+    const bool event_due = next_event_ < list_.count && sample_of(list_.items[next_event_].time) < until;
+    const int64_t event_sample = event_due ? sample_of(list_.items[next_event_].time) : until;
+    const bool roll_due = next_roll_ < until;
+    if (!event_due && !roll_due) return true;
+    if (roll_due && next_roll_ <= event_sample) {
+      if (model.roll) {
+        const uint8_t root = chord_root_at(next_roll_);
+        for (int i = next_roll_track_; i < engine::kTrackCount; ++i) {
+          if (!held.tracks[i].mute) continue;
+          const engine::Event event = audition(held, *kit_, engine::pad_at(i), root, fraction_of(next_roll_));
+          if (!out.push(ScheduledTrigger{next_roll_, generation_, event})) {
+            next_roll_track_ = i;
+            return false;
+          }
+        }
+      }
+      next_roll_track_ = 0;
+      next_roll_ += roll_step;  // the grid keeps time whether or not the roll is on
+      continue;
+    }
     const engine::Event& event = list_.items[next_event_];
-    const int64_t sample = sample_of(event.time);
-    if (sample >= until) break;
     if (!engine::track_of(held, event.track).mute) {
-      if (!out.push(ScheduledTrigger{sample, generation_, event})) return false;
+      if (!out.push(ScheduledTrigger{event_sample, generation_, event})) return false;
     }
     ++next_event_;
   }
-  const int64_t roll_step = beat_frames_ / kRollsPerBeat;
-  while (next_roll_ < until) {
-    if (model.roll) {
-      const uint8_t root = chord_root_at(next_roll_);
-      for (int i = next_roll_track_; i < engine::kTrackCount; ++i) {
-        if (!held.tracks[i].mute) continue;
-        const engine::Event event = audition(held, *kit_, engine::pad_at(i), root, fraction_of(next_roll_));
-        if (!out.push(ScheduledTrigger{next_roll_, generation_, event})) {
-          next_roll_track_ = i;
-          return false;
-        }
-      }
-    }
-    next_roll_track_ = 0;
-    next_roll_ += roll_step;
-  }
-  return true;
 }
 
 // The virtual start of this cycle is beat_in_cycle_ beats before the beat; the
