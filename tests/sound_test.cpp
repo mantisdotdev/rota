@@ -144,7 +144,7 @@ TEST_CASE("T-65 Delay time equals the dotted eighth at the given bpm") {
   CHECK(delay.length() == 36000);
   CHECK(delay.length() == kMaxDelayFrames);
 
-  SUBCASE("an impulse comes back exactly one dotted eighth later") {
+  SUBCASE("T-65 an impulse comes back exactly one dotted eighth later") {
     Delay fresh;
     fresh.set_tempo(100.0f);
     const int frames = 22000;
@@ -167,7 +167,7 @@ TEST_CASE("T-65 Delay time equals the dotted eighth at the given bpm") {
     CHECK(right[21600] == doctest::Approx(1.0f));
   }
 
-  SUBCASE("a sweep of one bpm per block never jumps: each crossfade finishes before the next starts") {
+  SUBCASE("T-65 a sweep of one bpm per block never jumps: each crossfade finishes before the next starts") {
     // 100 Hz: one bpm at 100 bpm moves the read point 216 frames, nearly half a period,
     // so a restarted fade would jump by almost the whole amplitude.
     Delay swept;
@@ -193,16 +193,20 @@ TEST_CASE("T-65 Delay time equals the dotted eighth at the given bpm") {
     CHECK(swept.length() == 15540);  // heading to 139 bpm: 45 / 139 s
   }
 
-  SUBCASE("bpm outside 60-180 is clamped, so there is no division by zero; a NaN changes nothing") {
+  SUBCASE("T-65 bpm outside 60-180 is clamped, infinities included; only a NaN changes nothing") {
     Delay clamped;
     clamped.set_tempo(0.0f);
     CHECK(clamped.length() == 36000);
     clamped.set_tempo(1000.0f);
     CHECK(clamped.length() == 12000);
+    clamped.set_tempo(100.0f);  // a length no clamp produces, so the next checks discriminate
+    CHECK(clamped.length() == 21600);
     clamped.set_tempo(std::numeric_limits<float>::quiet_NaN());
-    CHECK(clamped.length() == 12000);
+    CHECK(clamped.length() == 21600);
     clamped.set_tempo(std::numeric_limits<float>::infinity());
     CHECK(clamped.length() == 12000);
+    clamped.set_tempo(-std::numeric_limits<float>::infinity());
+    CHECK(clamped.length() == 36000);
   }
 }
 
