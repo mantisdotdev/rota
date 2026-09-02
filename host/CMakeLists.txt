@@ -47,11 +47,19 @@ endif()
 add_library(hal_sdl STATIC ${HAL_SDL_SOURCES})
 target_include_directories(hal_sdl PUBLIC "${FIRMWARE_SRC}")
 target_link_libraries(hal_sdl PUBLIC SDL2::SDL2)
+if(APPLE)
+  # audio_sdl.cpp asks the output device for 128-frame IO buffers (D-090).
+  target_link_libraries(hal_sdl PUBLIC "-framework CoreAudio")
+endif()
+# The simulator's "SD card" is a directory under out/, which git ignores.
+target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard")
 
+# The simulator reads the kit's WAVs through the render tool's loader (host-only code).
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
-target_link_libraries(simulator PRIVATE core hal_sdl)
+target_link_libraries(simulator PRIVATE hal_sdl offline)
 
-# tests: doctest on the host. No SDL, so it runs headless in CI.
+# tests: doctest on the host. No SDL, so it runs headless in CI; tests/hal_fake.cpp
+# stands in for the HAL so app/ runs under a scripted clock.
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "${REPO_ROOT}/tests/*.cpp")
 add_executable(tests ${TEST_SOURCES})
 target_include_directories(tests SYSTEM PRIVATE "${REPO_ROOT}/tests")

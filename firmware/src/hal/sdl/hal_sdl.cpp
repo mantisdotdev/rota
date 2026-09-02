@@ -1,5 +1,7 @@
-// Host HAL: an SDL2 window stands in for the screen (PRD §12). Keyboard input and
-// audio output arrive with the input grammar and sound layers.
+// Host HAL (PRD §12, D-016, D-090): an SDL2 window is the screen with a strip of
+// eight pad LEDs under it, the keyboard and mouse wheel are the controls, SDL's
+// timer thread is the scheduler's clock and a mutex is the lock. Audio and storage
+// are in their own files beside this one.
 #include <SDL.h>
 
 #include <cstdio>
@@ -9,23 +11,143 @@
 
 namespace {
 
-// PRD §7.3: 320×240 panel, scaled up so it is legible on a laptop.
-constexpr int kScreenWidth = 320;
-constexpr int kScreenHeight = 240;
 constexpr int kWindowScale = 2;
+constexpr int kLedStripHeight = 12;  // logical pixels under the screen
+constexpr int kLedSize = 8;
+constexpr int kLedPitch = 30;
+constexpr int kLedLeft = (hal::kScreenWidth - kLedPitch * hal::kPadCount + (kLedPitch - kLedSize)) / 2;
+constexpr int kLogicalHeight = hal::kScreenHeight + kLedStripHeight;
+constexpr int kInputCapacity = 256;
+constexpr int kPollWaitMs = 1;
+constexpr uint64_t kMicrosecondsPerSecond = 1000000;
 
-// PRD Appendix D: screen background #15130F.
-constexpr Uint8 kScreenBackgroundRed = 0x15;
-constexpr Uint8 kScreenBackgroundGreen = 0x13;
-constexpr Uint8 kScreenBackgroundBlue = 0x0F;
+// Appendix D: body #EAE3D1 around the screen, legends #6B665C for an unlit pad.
+constexpr Uint8 kBodyRed = 0xEA, kBodyGreen = 0xE3, kBodyBlue = 0xD1;
+constexpr Uint8 kUnlitRed = 0x6B, kUnlitGreen = 0x66, kUnlitBlue = 0x5C;
+
+const char* const kEncoderNames[hal::kEncoderCount] = {"speed", "filter", "fx", "chance", "volume"};
+
+struct Led {
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
 
 SDL_Window* window = nullptr;
 SDL_Renderer* renderer = nullptr;
+SDL_Texture* screen = nullptr;
+SDL_mutex* control_lock = nullptr;
+uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
+Led leds_[hal::kPadCount];
+hal::InputEvent input_[kInputCapacity];
+int input_count_ = 0;
+int selected_encoder_ = 0;
+uint64_t counter_start_ = 0;
+uint64_t counter_frequency_ = 1;
 bool quit_requested = false;
+hal::TimerCallback timer_callback_ = nullptr;
 
 [[noreturn]] void fail(const char* what) {
   std::fprintf(stderr, "hal/sdl: %s failed: %s\n", what, SDL_GetError());
   std::exit(EXIT_FAILURE);
+}
+
+void push(hal::InputKind kind, int index, int detents, Uint32 timestamp_ms) {
+  if (input_count_ >= kInputCapacity) return;  // the main loop is far behind; better to lose input than to block
+  // The event waited in SDL's queue since `timestamp_ms`, at millisecond resolution;
+  // that rounding must not stamp an event before the one ahead of it.
+  static uint64_t last_time_us = 0;
+  const uint64_t waited_us = static_cast<uint64_t>(SDL_GetTicks() - timestamp_ms) * 1000;
+  const uint64_t now = hal::now_us();
+  uint64_t time_us = now > waited_us ? now - waited_us : 0;
+  if (time_us < last_time_us) time_us = last_time_us;
+  last_time_us = time_us;
+  input_[input_count_++] = hal::InputEvent{kind, static_cast<uint8_t>(index), static_cast<int8_t>(detents), time_us};
+}
+
+void push_button(hal::Button button, bool down, Uint32 timestamp_ms) {
+  push(down ? hal::InputKind::button_down : hal::InputKind::button_up, static_cast<int>(button), 0, timestamp_ms);
+}
+
+void turn(int detents, Uint32 timestamp_ms) {
+  push(hal::InputKind::encoder_turn, selected_encoder_, detents, timestamp_ms);
+}
+
+void select_encoder(int step) {
+  selected_encoder_ = (selected_encoder_ + step + hal::kEncoderCount) % hal::kEncoderCount;
+  std::printf("hal/sdl: knob %s (up/down or wheel turns it, return pushes it)\n", kEncoderNames[selected_encoder_]);
+  std::fflush(stdout);
+}
+
+// D-090: 1–8 pads; S W K Z D E space for split, swap, skip, undo, dice, show, play;
+// A B C and shift+D sections (the D key is dice); up/down turn the selected knob,
+// left/right select it, return pushes it; - and = are the volume control.
+void on_key(const SDL_KeyboardEvent& key) {
+  const bool down = key.type == SDL_KEYDOWN;
+  const SDL_Keycode code = key.keysym.sym;
+  const bool shifted = (key.keysym.mod & KMOD_SHIFT) != 0;
+  const Uint32 at = key.timestamp;
+  if (code == SDLK_ESCAPE) {
+    quit_requested = true;
+    return;
+  }
+  if (code == SDLK_UP || code == SDLK_DOWN) {  // repeats keep the knob turning
+    if (down) turn(code == SDLK_UP ? 1 : -1, at);
+    return;
+  }
+  if (code == SDLK_MINUS || code == SDLK_EQUALS) {
+    if (down) push(hal::InputKind::encoder_turn, static_cast<int>(hal::Encoder::volume), code == SDLK_EQUALS ? 1 : -1, at);
+    return;
+  }
+  if (key.repeat != 0) return;
+  if (code >= SDLK_1 && code <= SDLK_8) {
+    push(down ? hal::InputKind::pad_down : hal::InputKind::pad_up, static_cast<int>(code - SDLK_1), 0, at);
+    return;
+  }
+  switch (code) {
+    case SDLK_s: push_button(hal::Button::split, down, at); return;
+    case SDLK_w: push_button(hal::Button::swap, down, at); return;
+    case SDLK_k: push_button(hal::Button::skip, down, at); return;
+    case SDLK_z: push_button(hal::Button::undo, down, at); return;
+    case SDLK_d: push_button(shifted ? hal::Button::section_d : hal::Button::dice, down, at); return;
+    case SDLK_e: push_button(hal::Button::show, down, at); return;
+    case SDLK_SPACE: push_button(hal::Button::play, down, at); return;
+    case SDLK_a: push_button(hal::Button::section_a, down, at); return;
+    case SDLK_b: push_button(hal::Button::section_b, down, at); return;
+    case SDLK_c: push_button(hal::Button::section_c, down, at); return;
+    case SDLK_LEFT: if (down) select_encoder(-1); return;
+    case SDLK_RIGHT: if (down) select_encoder(1); return;
+    case SDLK_RETURN:
+      push(down ? hal::InputKind::encoder_down : hal::InputKind::encoder_up, selected_encoder_, 0, at);
+      return;
+    default:
+      break;
+  }
+}
+
+void on_event(const SDL_Event& event) {
+  switch (event.type) {
+    case SDL_QUIT:
+      quit_requested = true;
+      return;
+    case SDL_KEYDOWN:
+    case SDL_KEYUP:
+      on_key(event.key);
+      return;
+    case SDL_MOUSEWHEEL: {
+      int detents = event.wheel.y;
+      if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) detents = -detents;
+      if (detents != 0) turn(detents, event.wheel.timestamp);
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+Uint32 timer_trampoline(Uint32 interval, void* /*unused*/) {
+  if (timer_callback_ != nullptr) timer_callback_();
+  return interval;
 }
 
 }  // namespace
@@ -33,38 +155,98 @@ bool quit_requested = false;
 namespace hal {
 
 void init() {
-  if (SDL_Init(SDL_INIT_VIDEO) != 0) fail("SDL_Init");
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) fail("SDL_Init");
   std::atexit(SDL_Quit);
-  window = SDL_CreateWindow("Rota", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                            kScreenWidth * kWindowScale, kScreenHeight * kWindowScale,
-                            SDL_WINDOW_SHOWN);
+  counter_frequency_ = SDL_GetPerformanceFrequency();
+  counter_start_ = SDL_GetPerformanceCounter();
+  control_lock = SDL_CreateMutex();
+  if (control_lock == nullptr) fail("SDL_CreateMutex");
+  window = SDL_CreateWindow("Rota", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kScreenWidth * kWindowScale,
+                            kLogicalHeight * kWindowScale, SDL_WINDOW_SHOWN);
   if (window == nullptr) fail("SDL_CreateWindow");
-  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  // No vsync: present() must return at once so a key press is never behind a frame.
+  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (renderer == nullptr) fail("SDL_CreateRenderer");
-  SDL_RenderSetLogicalSize(renderer, kScreenWidth, kScreenHeight);
-  std::printf("hal/sdl: window %dx%d (screen %dx%d, scale %d)\n",
-              kScreenWidth * kWindowScale, kScreenHeight * kWindowScale, kScreenWidth,
-              kScreenHeight, kWindowScale);
+  SDL_RenderSetLogicalSize(renderer, kScreenWidth, kLogicalHeight);
+  screen = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, kScreenWidth, kScreenHeight);
+  if (screen == nullptr) fail("SDL_CreateTexture");
+  for (Led& led : leds_) led = Led{0, 0, 0};
+  std::printf("hal/sdl: window %dx%d (screen %dx%d, scale %d)\n", kScreenWidth * kWindowScale,
+              kLogicalHeight * kWindowScale, kScreenWidth, kScreenHeight, kWindowScale);
   std::fflush(stdout);
 }
 
-uint32_t now_ms() { return SDL_GetTicks(); }
+uint64_t now_us() {
+  const uint64_t elapsed = SDL_GetPerformanceCounter() - counter_start_;
+  return elapsed / counter_frequency_ * kMicrosecondsPerSecond +
+         (elapsed % counter_frequency_) * kMicrosecondsPerSecond / counter_frequency_;
+}
 
+// Waits up to a millisecond for input so the main loop idles between frames
+// without sleeping through a key press.
 bool poll() {
   SDL_Event event;
-  while (SDL_PollEvent(&event) != 0) {
-    const bool closed = event.type == SDL_QUIT;
-    const bool escaped = event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE;
-    if (closed || escaped) quit_requested = true;
+  if (SDL_WaitEventTimeout(&event, kPollWaitMs) != 0) {
+    on_event(event);
+    while (SDL_PollEvent(&event) != 0) on_event(event);
   }
   return !quit_requested;
 }
 
+int read_input(InputEvent* out, int capacity) {
+  const int count = input_count_ < capacity ? input_count_ : capacity;
+  for (int i = 0; i < count; ++i) out[i] = input_[i];
+  for (int i = count; i < input_count_; ++i) input_[i - count] = input_[i];
+  input_count_ -= count;
+  return count;
+}
+
+void start_timer(uint32_t period_us, TimerCallback callback) {
+  timer_callback_ = callback;
+  const Uint32 period_ms = period_us < 1000 ? 1 : period_us / 1000;
+  if (SDL_AddTimer(period_ms, timer_trampoline, nullptr) == 0) fail("SDL_AddTimer");
+}
+
+void lock() { SDL_LockMutex(control_lock); }
+void unlock() { SDL_UnlockMutex(control_lock); }
+
+uint16_t* framebuffer() { return framebuffer_; }
+
 void present() {
-  SDL_SetRenderDrawColor(renderer, kScreenBackgroundRed, kScreenBackgroundGreen,
-                         kScreenBackgroundBlue, SDL_ALPHA_OPAQUE);
+  SDL_UpdateTexture(screen, nullptr, framebuffer_, kScreenWidth * static_cast<int>(sizeof(uint16_t)));
+  SDL_SetRenderDrawColor(renderer, kBodyRed, kBodyGreen, kBodyBlue, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
+  const SDL_Rect screen_rect{0, 0, kScreenWidth, kScreenHeight};
+  SDL_RenderCopy(renderer, screen, nullptr, &screen_rect);
+  for (int i = 0; i < kPadCount; ++i) {
+    const Led led = leds_[i];
+    const bool lit = led.red != 0 || led.green != 0 || led.blue != 0;
+    SDL_SetRenderDrawColor(renderer, lit ? led.red : kUnlitRed, lit ? led.green : kUnlitGreen,
+                           lit ? led.blue : kUnlitBlue, SDL_ALPHA_OPAQUE);
+    const SDL_Rect pad{kLedLeft + i * kLedPitch, kScreenHeight + (kLedStripHeight - kLedSize) / 2, kLedSize, kLedSize};
+    SDL_RenderFillRect(renderer, &pad);
+  }
   SDL_RenderPresent(renderer);
+}
+
+void set_led(int pad, uint8_t red, uint8_t green, uint8_t blue) {
+  if (pad < 0 || pad >= kPadCount) return;
+  leds_[pad] = Led{red, green, blue};
+}
+
+void show_leds() {}  // drawn with the next present()
+
+int battery_percent() {
+  int percent = -1;
+  SDL_GetPowerInfo(nullptr, &percent);
+  return percent < 0 ? 100 : percent;  // a desk machine has no battery to report
+}
+
+bool headphones_inserted() { return false; }
+
+void log(const char* line) {
+  std::puts(line);
+  std::fflush(stdout);
 }
 
 }  // namespace hal
