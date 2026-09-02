@@ -19,4 +19,6 @@ pio run -d firmware -e teensy41
 ./build/simulator
 ```
 
-Layout in one line: `firmware/src/engine/` and `firmware/src/sound/` are portable and pure, `firmware/src/hal/` is the only platform code (`teensy/` for the device, `sdl/` for the simulator), `host/` is the CMake build of the same sources, `tests/` are doctest suites that run on the host, `tools/` are the kit builder, sample generator and WAV renderer.
+Layout in one line: `firmware/src/engine/` and `firmware/src/sound/` are portable and pure, `firmware/src/app/` is the scheduler and input grammar, `firmware/src/ui/` the screen, `firmware/src/hal/` is the only platform code (`teensy/` for the device, `sdl/` for the simulator; tests link a fake in `tests/hal_fake.cpp`), `host/` is the CMake build of the same sources, `tests/` are doctest suites that run on the host, `tools/` are the kit builder, sample generator and WAV renderer, and [hardware/WIRING.md](hardware/WIRING.md) says which Teensy pin goes where on the EVT unit (every row unverified until bring-up).
+
+In the simulator the keys 1–8 are the pads; S, W, K, Z, D, E and space are split, swap, skip, undo, dice, show and play; A, B, C and shift+D are the sections; the arrow keys and the mouse wheel turn the knobs (left and right pick which); - and = are the volume. The audition latency of every pad press is printed as it is measured.

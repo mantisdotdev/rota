@@ -103,6 +103,11 @@ void tap(Section& section, Pad pad, const Kit& kit) {
   live.step_count += 1;
 }
 
+uint8_t next_note_position(const State& state, Pad pad, const Kit& kit) {
+  if (pad != Pad::chord && pad != Pad::pluck) return 0;
+  return next_note(track_of(state, pad), sequence_length(state, pad, kit));
+}
+
 void remove_last_step(Section& section, Pad pad) {
   if (is_empty(track_of(section.state(), pad))) return;
   track_of(section.push_edit(), pad).step_count -= 1;
