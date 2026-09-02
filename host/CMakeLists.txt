@@ -60,8 +60,9 @@ if(APPLE)
   # audio_sdl.cpp asks the output device for 128-frame IO buffers (D-090).
   target_link_libraries(hal_sdl PUBLIC "-framework CoreAudio")
 endif()
-# The simulator's "SD card" is a directory under out/, which git ignores.
-target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard")
+# The simulator's "SD card" and its screenshots are directories under out/, which git ignores.
+target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard"
+                                           ROTA_SCREENS_DIR="${REPO_ROOT}/out/screens")
 
 # The simulator reads the kit's WAVs through the render tool's loader (host-only code).
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")

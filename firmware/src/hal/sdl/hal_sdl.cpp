@@ -1,7 +1,8 @@
 // Host HAL (PRD §12, D-016, D-090): an SDL2 window is the screen with a strip of
 // the eight pad LEDs and the eleven button backlights under it, the keyboard and
 // mouse wheel are the controls, SDL's timer thread is the scheduler's clock and a
-// mutex is the lock. Audio and storage are in their own files beside this one.
+// mutex is the lock. Audio, storage and screenshots are in their own files beside
+// this one.
 #include <SDL.h>
 
 #include <atomic>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 
 #include "hal/hal.h"
+#include "hal/sdl/sdl_internal.h"
 
 namespace {
 
@@ -90,7 +92,8 @@ void select_encoder(int step) {
 
 // D-090: 1–8 pads; S W K Z D E space for split, swap, skip, undo, dice, show, play;
 // A B C and shift+D sections (the D key is dice); up/down turn the selected knob,
-// left/right select it, return pushes it; - and = are the volume control.
+// left/right select it, return pushes it; - and = are the volume control; P saves
+// a screenshot (D-100).
 void on_key(const SDL_KeyboardEvent& key) {
   const bool down = key.type == SDL_KEYDOWN;
   const SDL_Keycode code = key.keysym.sym;
@@ -109,6 +112,10 @@ void on_key(const SDL_KeyboardEvent& key) {
     return;
   }
   if (key.repeat != 0) return;
+  if (code == SDLK_p) {
+    if (down) hal::sdl::save_screenshot(framebuffer_);
+    return;
+  }
   if (code >= SDLK_1 && code <= SDLK_8) {
     push(down ? hal::InputKind::pad_down : hal::InputKind::pad_up, static_cast<int>(code - SDLK_1), 0, at);
     return;
