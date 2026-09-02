@@ -31,7 +31,7 @@ reviews:
         - Time in seconds, samples or bpm. Inside engine/, time is a fraction of one cycle in [0, 1) (engine::Fraction, D-040).
         - rand(), random(), std::random_device or any global random source. Chance draws only from the seeded engine::Prng (D-034).
         - Kit knowledge in code: tap templates, progressions, pluck sequences and dice loops live in spec/kits/<id>/kit.json and the header generated from it.
-        - A change to the meaning of any RT2 or RT2S share-code field or character without a new version prefix (RT3), or an edit to a golden code in spec/share-format.md.
+        - A change to the meaning of any RT2 or RT2S share-code field or character without a new version prefix (RT3 for sections, RT3S for songs), or an edit to a golden code in spec/share-format.md.
         - "Fixing" the elastic redistribution (adding a step moves the existing steps) or adding a grid; that behaviour is the product (D-001).
         - Undo that touches performance parameters (knobs, key, level, tone, send, chance, mute); undo restores the pattern only (D-035).
         Also require: every new behaviour names a scenario ID in spec/scenarios.md and has a doctest named after it (§12 rule 2); every choice the PRD does not cover has a DECISIONS.md row before the code that depends on it.
