@@ -41,26 +41,26 @@ Scheduler::Scheduler(const engine::Kit& kit)
 
 void Scheduler::set_seed(uint32_t seed) { seed_ = seed; }
 
-void Scheduler::start(Model& model, int64_t position, Mailbox<sound::Params>& params) {
+void Scheduler::start(Model& model, AudioPath& audio) {
   running_ = true;
-  const int64_t at = position + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
+  const int64_t at = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
   scheduled_until_ = at;
-  begin_beat(model, at, true, params);
+  begin_beat(model, at, true, audio);
 }
 
 void Scheduler::stop() { running_ = false; }
 
-void Scheduler::tick(Model& model, int64_t position, TriggerQueue& out, Mailbox<sound::Params>& params) {
+void Scheduler::tick(Model& model, AudioPath& audio) {
   if (!running_) return;
-  const int64_t horizon = position + kLookaheadFrames;
+  const int64_t horizon = audio.position() + kLookaheadFrames;
   while (scheduled_until_ < horizon) {
     const int64_t beat_end = beat_start_ + beat_frames_;
     if (scheduled_until_ >= beat_end) {
-      begin_beat(model, beat_end, false, params);
+      begin_beat(model, beat_end, false, audio);
       continue;
     }
     const int64_t until = beat_end < horizon ? beat_end : horizon;
-    if (!push_window(model, until, out)) return;  // the queue is full: the rest waits for the next tick
+    if (!push_window(model, until, audio.scheduled)) return;  // the queue is full: the rest waits for the next tick
     scheduled_until_ = until;
   }
 }
@@ -68,7 +68,7 @@ void Scheduler::tick(Model& model, int64_t position, TriggerQueue& out, Mailbox<
 // A beat boundary: where an edit lands (§6.7). The playing section's live state
 // becomes this beat's pattern, its bpm this beat's length, and its events are asked
 // for again with the same cycle index, which rolls the same dice (D-034).
-void Scheduler::begin_beat(Model& model, int64_t at, bool first, Mailbox<sound::Params>& params) {
+void Scheduler::begin_beat(Model& model, int64_t at, bool first, AudioPath& audio) {
   beat_start_ = at;
   next_roll_ = at;
   next_roll_track_ = 0;
@@ -86,7 +86,7 @@ void Scheduler::begin_beat(Model& model, int64_t at, bool first, Mailbox<sound::
   engine::events(playing_, *kit_, cycle_index_, seed_, list_);
   next_event_ = 0;
   while (next_event_ < list_.count && before(list_.items[next_event_].time, beat_in_cycle_)) ++next_event_;
-  params.publish(params_of(live, *kit_, model.master_volume));
+  audio.params.publish(params_of(live, *kit_, model.master_volume));
 }
 
 // A cycle boundary: where sections switch and the song steps (§6.8, T-17, T-39).

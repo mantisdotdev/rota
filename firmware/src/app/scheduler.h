@@ -2,11 +2,10 @@
 
 #include <cstdint>
 
+#include "app/audio_path.h"
 #include "app/model.h"
-#include "app/queue.h"
 #include "engine/events.h"
 #include "engine/kit.h"
-#include "sound/engine.h"
 #include "sound/limits.h"
 
 // The clock (D-084). The audio callback's frame counter is the master clock; every
@@ -17,14 +16,6 @@
 // steps the song (§6.8). Time inside a cycle stays a Fraction until it becomes a
 // sample here.
 namespace app {
-
-struct ScheduledTrigger {
-  int64_t sample;  // absolute frame since the audio started
-  engine::Event event;
-};
-
-constexpr int kScheduledQueueCapacity = 256;
-using TriggerQueue = SpscQueue<ScheduledTrigger, kScheduledQueueCapacity>;
 
 constexpr uint32_t kTimerPeriodUs = 2000;
 constexpr int kLookaheadFrames = sound::kSampleRate / 100;  // 10 ms: the window an edit, a mute or a knob cannot reach
@@ -39,13 +30,14 @@ class Scheduler {
   // The session's seed for chance and humanize (D-034); set once at init.
   void set_seed(uint32_t seed);
 
-  // Transport. `position` is the audio side's frame count.
-  void start(Model& model, int64_t position, Mailbox<sound::Params>& params);
+  // Transport: the first beat begins kStartDelayBlocks after the audio side's position.
+  void start(Model& model, AudioPath& audio);
   void stop();
   bool running() const { return running_; }
 
-  // From the timer, under hal::lock().
-  void tick(Model& model, int64_t position, TriggerQueue& out, Mailbox<sound::Params>& params);
+  // From the timer, under hal::lock(): hands the audio side every hit due before
+  // its position plus the lookahead.
+  void tick(Model& model, AudioPath& audio);
 
   // Where the playhead is at `position`, as a fraction of the cycle; 0 when stopped.
   engine::Fraction playhead(int64_t position) const;
@@ -56,7 +48,7 @@ class Scheduler {
   uint8_t chord_root_at(int64_t position) const;
 
  private:
-  void begin_beat(Model& model, int64_t at, bool first, Mailbox<sound::Params>& params);
+  void begin_beat(Model& model, int64_t at, bool first, AudioPath& audio);
   void cross_cycle(Model& model, bool first);
   bool push_window(const Model& model, int64_t until, TriggerQueue& out);
   int64_t sample_of(engine::Fraction time) const;

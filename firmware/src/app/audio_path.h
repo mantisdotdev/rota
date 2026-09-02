@@ -4,7 +4,6 @@
 #include <cstdint>
 
 #include "app/queue.h"
-#include "app/scheduler.h"
 #include "engine/events.h"
 #include "engine/kit.h"
 #include "sound/engine.h"
@@ -15,6 +14,15 @@
 // engine, and reports what fired back to the control side for the ring's flashes.
 // Everything here runs inside hal's audio callback except init and the readers.
 namespace app {
+
+// A hit the scheduler handed over, due at an absolute frame since the audio started.
+struct ScheduledTrigger {
+  int64_t sample;
+  engine::Event event;
+};
+
+constexpr int kScheduledQueueCapacity = 256;
+using TriggerQueue = SpscQueue<ScheduledTrigger, kScheduledQueueCapacity>;
 
 // A pad pressed now: rendered at the start of the next block (D-085).
 struct Immediate {

@@ -50,7 +50,7 @@ void render(float* left, float* right) { audio.render(left, right); }
 
 void on_timer() {
   hal::lock();
-  scheduler.tick(the_model, audio.position(), audio.scheduled, audio.params);
+  scheduler.tick(the_model, audio);
   hal::unlock();
 }
 

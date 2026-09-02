@@ -345,7 +345,7 @@ void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, 
     return;
   }
   model.transport = true;
-  scheduler.start(model, audio.position(), audio.params);
+  scheduler.start(model, audio);
 }
 
 // Stop leaves nothing pending: no song, no switch, no roll (T-81).
@@ -376,7 +376,7 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
   say(model, at_us, kStatusUs, "playing song");
   if (!model.transport) {
     model.transport = true;
-    scheduler.start(model, audio.position(), audio.params);
+    scheduler.start(model, audio);
   }
 }
 
