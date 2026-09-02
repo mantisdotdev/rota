@@ -74,6 +74,6 @@ Design bets with a known fallback. Observe them in usability round 1 (PRD §14, 
 
 ## Open points
 
-A new gap goes here with its scenario ID until the PRD answers it. Everything else open on 2026-09-02 was decided the same day: see D-018–D-042 in `DECISIONS.md`.
+A new gap goes here with its scenario ID until the PRD answers it. Everything else open on 2026-09-02 was decided the same day: see D-018–D-044 in `DECISIONS.md`.
 
 - **T-59, lineage on share (io/, session 7).** §10.2 says the device generates a 6-char id for every loop that is shared and that loading a code stores its id as the child's lineage; `spec/share-format.md` §2 and §4 say `~id` names the loop this one was loaded from and is written only when the loop was loaded from a code that carried one. The two readings differ on what the share view writes after `~`: the shared loop's own fresh id (so the receiver's lineage names its parent, and every shared code carries an id) or the lineage the loop already holds (so a re-shared loop names its grandparent, and a loop made from scratch shares with no id). The engine encodes `State::lineage` as it stands; the id generator and the replace-on-share step are io/. Decide the reading, then fill T-59's expected column and add a golden code if the canonical form changes.
