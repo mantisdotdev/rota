@@ -4,6 +4,8 @@
 // of that clock, and every input carries the time it was "pressed".
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -39,6 +41,7 @@ struct World {
   uint32_t seen = 0;
   uint64_t audio_allocations = 0;
   uint64_t timer_allocations = 0;
+  float last_peak = 0.0f;  // the loudest sample of the last block rendered
 
   World() {
     hal_fake::reset();
@@ -71,6 +74,8 @@ struct World {
         const uint64_t before = allocation_counter::count();
         hal_fake::audio_callback()(left, right);
         audio_allocations += allocation_counter::count() - before;
+        last_peak = 0.0f;
+        for (int i = 0; i < kBlock; ++i) last_peak = std::max(last_peak, std::max(std::fabs(left[i]), std::fabs(right[i])));
         frames += kBlock;
       }
       app::tick();

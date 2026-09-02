@@ -5,6 +5,7 @@
 #include <string>
 
 #include "app_support.h"
+#include "engine/edits.h"
 #include "engine/kits/lofi.h"
 
 using namespace app_support;
@@ -289,6 +290,7 @@ TEST_CASE("T-81 Emptying the arrangement under a playing song ends song play wit
 TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over") {
   World w;
   w.tap(Pad::kick, 4);
+  w.tap(Pad::bass);  // a synth voice at 0 that sustains for two seconds (D-075): the tail to keep
   w.play();
   // Two blocks (5.3 ms) before the kick at 1/4, which the 10 ms lookahead has already handed over.
   w.run_until(w.at(1, engine::Fraction{1, 4}) - 2 * kBlock);
@@ -296,6 +298,7 @@ TEST_CASE("T-82 Stopping inside the lookahead drops the hits already handed over
   CHECK_FALSE(w.model().transport);
   w.run_for(8 * kBlock);
   CHECK(w.times_in_cycle(Pad::kick, 1) == "0");  // the 1/4 hit never sounded
+  CHECK(w.last_peak > 0.01f);                     // the bass struck at 0 is still sounding
 
   w.play();  // a fresh cycle whose hits all fire
   w.run_until(w.cycle_start(1));
@@ -321,6 +324,37 @@ TEST_CASE("T-83 The audio clock carries on past the 32-bit block count") {
     last = now;
   }
   CHECK(last == static_cast<int64_t>((wrap + 2) * static_cast<uint64_t>(kBlock)));
+
+  SUBCASE("the scheduler starts a cycle before the wrap and lands the next cycle's kick after it") {
+    auto model = std::make_unique<app::Model>(engine::kits::kLofi);
+    engine::tap(model->sections[0], Pad::kick, engine::kits::kLofi);  // a kick at 0
+    model->transport = true;
+    app::Scheduler scheduler(engine::kits::kLofi);
+    scheduler.set_seed(42);
+    audio->reset(wrap - 4);
+    scheduler.start(*model, *audio);  // the first beat two blocks on: cycle 0 starts at wrap - 2 blocks
+    const int64_t cycle_start = static_cast<int64_t>((wrap - 2) * static_cast<uint64_t>(kBlock));
+    std::vector<int64_t> kicks;
+    engine::Fraction playhead{0, 1};
+    int64_t timer_at = audio->position();
+    while (audio->position() < cycle_start + kCycleFrames + 2 * kBlock) {
+      if (timer_at <= audio->position()) {
+        scheduler.tick(*model, *audio);
+        timer_at += 96;  // 2 ms
+      }
+      audio->render(left, right);
+      const engine::Fraction now = scheduler.playhead(audio->position());
+      if (audio->position() <= cycle_start + kCycleFrames) {
+        CHECK(now >= playhead);  // the ring's playhead never runs backwards across the wrap
+        playhead = now;
+      }
+      app::Fired hit;
+      while (audio->fired.pop(hit)) {
+        if (hit.event.track == Pad::kick) kicks.push_back(hit.sample);
+      }
+    }
+    CHECK(kicks == std::vector<int64_t>{cycle_start, cycle_start + kCycleFrames});  // the second lies past 2^32 blocks
+  }
 }
 
 TEST_CASE("T-84 Hold split and a pad: the roll retriggers at every 1/16, handed over in sample order") {
