@@ -200,11 +200,11 @@ def main(argv):
         print("usage: kit_builder.py spec/kits/<id>/kit.json firmware/src/engine/kits/<id>.h", file=sys.stderr)
         return EXIT_USAGE
     source_path, output_path = argv[1], argv[2]
-    with open(source_path, encoding="utf-8") as source:
-        kit = json.load(source)
     try:
+        with open(source_path, encoding="utf-8") as source:
+            kit = json.load(source)
         header = build_header(kit, source_path, output_path)
-    except (KitError, KeyError, ValueError) as error:
+    except (KitError, KeyError, ValueError, OSError) as error:
         print(f"kit_builder: {source_path}: {error}", file=sys.stderr)
         return EXIT_INVALID_KIT
     with open(output_path, "w", encoding="utf-8", newline="\n") as output:
