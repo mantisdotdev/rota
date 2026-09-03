@@ -147,6 +147,8 @@ TEST_CASE("T-115 A received whole loop brings every pattern and the sender's id,
 
   engine::Track before[engine::kTrackCount];
   for (int t = 0; t < engine::kTrackCount; ++t) before[t] = w.state(0).tracks[t];
+  const uint8_t before_root = w.state(0).key.root;
+  const std::string before_lineage = w.state(0).lineage;
 
   const engine::State sender = engine::decode(kSenderLoop, app::kit()).state;
   uint8_t msg[io::kMessageCapacity];
@@ -169,9 +171,16 @@ TEST_CASE("T-115 A received whole loop brings every pattern and the sender's id,
   CHECK(std::string(w.state(0).lineage) == id);
   CHECK(w.status() == "got a loop");
 
-  // One undo brings the prior whole loop back: it arrived as a single edit.
+  // One undo brings the prior whole loop back — every track's pattern and mix, the
+  // tempo, the key and the lineage — because it arrived as a single edit.
   w.press(hal::Button::undo);
-  for (int t = 0; t < engine::kTrackCount; ++t) CHECK(same_pattern(w.state(0).tracks[t], before[t]));
+  for (int t = 0; t < engine::kTrackCount; ++t) {
+    CHECK(same_pattern(w.state(0).tracks[t], before[t]));
+    CHECK(same_mix(w.state(0).tracks[t], before[t]));
+  }
+  CHECK(w.state(0).bpm == receiver_bpm);
+  CHECK(w.state(0).key.root == before_root);
+  CHECK(std::string(w.state(0).lineage) == before_lineage);
 }
 
 TEST_CASE("T-116 A wire that refuses bytes takes the whole message once, in order") {
