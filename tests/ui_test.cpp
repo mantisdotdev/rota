@@ -836,7 +836,10 @@ TEST_CASE("T-94 A tutorial flag the card refuses is written again a second later
   w.run_for(kSecond + kSecond / 10);
   CHECK_FALSE(w.model().tutorial.save_pending);
   REQUIRE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok);
-  CHECK(flag == app::kTutorialRan);  // the next boot will not run it again
+  CHECK(flag == app::kTutorialRan);
+
+  w.reboot();  // and the next boot does not run it again
+  CHECK_FALSE(w.model().tutorial.active);
 }
 
 TEST_CASE("T-90 Pad LEDs: dim with no steps, the track colour with steps, full for 100 ms after a hit") {

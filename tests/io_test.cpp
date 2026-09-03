@@ -445,7 +445,7 @@ TEST_CASE("T-99 A boot on a card with no song writes nothing until the player pl
   CHECK(hal_fake::writes("songs/1.txt") == 1);
 }
 
-TEST_CASE("T-56 A pad in the song view or in settings neither sounds nor mutes its track") {
+TEST_CASE("T-56 A pad in the song view picks a song without sounding it or muting its track") {
   World w;
   w.tap(Pad::kick, 4);
   w.tap(Pad::hat, 2);  // four hats, at the quarters
@@ -456,7 +456,7 @@ TEST_CASE("T-56 A pad in the song view or in settings neither sounds nor mutes i
   REQUIRE(w.model().view == app::View::song);
 
   const size_t sounded = w.audition_samples(Pad::hat).size();
-  w.pad_down(Pad::hat);  // pad 3: a pick, not a hit
+  w.pad_down(Pad::hat);  // held across a whole cycle, so a mute would take hits out of it
   for (int i = 0; i < engine::kSectionCount; ++i) {
     CAPTURE(i);
     CHECK_FALSE(w.state(i).tracks[engine::index_of(Pad::hat)].mute);
@@ -466,24 +466,35 @@ TEST_CASE("T-56 A pad in the song view or in settings neither sounds nor mutes i
   CHECK(w.audition_samples(Pad::hat).size() == sounded);      // the press made no sound of its own
   CHECK(w.times_in_cycle(Pad::hat, 1) == "0 1/4 1/2 3/4");    // and took no hit out of the pattern
 
+  w.tap(Pad::hat);  // and a press short enough to be a tap still picks the song it names
+  w.frame();
+  CHECK(w.model().settings.song == 3);
+  CHECK(w.audition_samples(Pad::hat).size() == sounded);
+
   w.press(Button::show);  // the ring, where a pad is an instrument again
   w.pad_down(Pad::hat);
   CHECK(w.state(0).tracks[engine::index_of(Pad::hat)].mute);
   w.run_for(kSecond / 10);  // the audition is heard when the audio path renders it
   CHECK(w.audition_samples(Pad::hat).size() == sounded + 1);
   w.pad_up(Pad::hat);
+}
 
-  w.button_down(Button::undo);  // and settings, where it is not (D-096)
+TEST_CASE("T-89 A pad in settings is inert: no sound, no mute, no steps") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.button_down(Button::undo);  // undo and show held together open settings (§9.4)
   w.run_for(kSecond / 10);
   w.button_down(Button::show);
   w.run_for(kSecond / 2);
   w.button_up(Button::show);
   w.button_up(Button::undo);
   REQUIRE(w.model().view == app::View::settings);
-  const size_t before = w.audition_samples(Pad::hat).size();
+
+  const size_t sounded = w.audition_samples(Pad::hat).size();
   w.pad_down(Pad::hat);
   CHECK_FALSE(w.state(0).tracks[engine::index_of(Pad::hat)].mute);
   w.run_for(kSecond / 10);
-  CHECK(w.audition_samples(Pad::hat).size() == before);
   w.pad_up(Pad::hat);
+  CHECK(w.audition_samples(Pad::hat).size() == sounded);
+  CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::hat)));  // and it is a menu, so nothing was tapped in
 }
