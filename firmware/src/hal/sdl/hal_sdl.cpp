@@ -207,7 +207,7 @@ void init() {
   for (Led& led : button_leds_) led = Led{0, 0, 0};
   std::printf("hal/sdl: window %dx%d (screen %dx%d, scale %d)\n", kScreenWidth * kWindowScale,
               kLogicalHeight * kWindowScale, kScreenWidth, kScreenHeight, kWindowScale);
-  std::fflush(stdout);
+  std::fflush(stdout);  sdl::link_init();
 }
 
 uint64_t now_us() {
@@ -224,6 +224,7 @@ bool poll() {
     on_event(event);
     while (SDL_PollEvent(&event) != 0) on_event(event);
   }
+  sdl::link_poll();  // drain the jam link and emit any due clock pulse (§11)
   return !quit_requested;
 }
 
@@ -291,14 +292,6 @@ int battery_percent() {
 
 bool headphones_inserted() { return false; }
 
-// No MIDI DIN on a desk machine. Two simulators share a cable over UDP behind
-// ROTA_LINK, which link_sdl.cpp adds; with no link there is no port, and the
-// simulator behaves exactly as it did before there was a wire at all.
-int read_clock_in(ClockIn*, int) { return 0; }
-bool send_clock_out(ClockPort, ClockPulse, uint64_t) { return false; }
-int midi_read(uint8_t*, int) { return 0; }
-int midi_send(const uint8_t*, int) { return 0; }
-bool midi_port_open() { return false; }
 
 void log(const char* line) {
   std::puts(line);
