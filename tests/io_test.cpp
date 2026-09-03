@@ -768,6 +768,9 @@ TEST_CASE("T-101 A kit file that says a thing twice does not load") {
   hal_fake::reset();
   engine::Kit kit{};
   const std::string text = kit_file("lofi/kit.txt");
+  // The repeated field has to be its own line, or the case would pass because the line
+  // it glued itself onto is malformed rather than because it is a repeat.
+  REQUIRE(text.back() == '\n');
   for (const char* said : {"id=lofi", "swing=15", "filter=10", "fx=2", "sidechain=1,5,120",
                            "pluck=0,2,4,7,9,7,4,2"}) {
     const std::string twice = said;
