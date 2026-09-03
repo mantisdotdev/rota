@@ -160,7 +160,7 @@ LoadResult load_song(int slot, const engine::Kit& kit, engine::Song& song) {
     case hal::FileRead::missing:
       return LoadResult::missing;
     case hal::FileRead::unusable:
-      refuse(path, "is empty or too big to be a song");
+      refuse(path, "is empty, too big, or could not be read");
       return LoadResult::invalid;
     case hal::FileRead::ok:
       break;
