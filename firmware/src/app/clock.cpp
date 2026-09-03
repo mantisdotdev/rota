@@ -129,7 +129,8 @@ void Clock::follow(const hal::ClockIn* pulses, int count, uint64_t now_us, Audio
       f.locked_ticks = 1;
       continue;
     }
-    const int64_t raw = t - f.last_us;  // > 0: stamps are monotone per port
+    const int64_t raw = t - f.last_us;  // per-port stamps are monotone, but the device may stamp two bytes alike
+    if (raw <= 0) continue;  // same-instant duplicates carry no interval; folding a 0 would halve the EMA
     int ticks;
     if (f.per_tick_us == 0) {
       ticks = 1;

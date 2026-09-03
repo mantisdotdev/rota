@@ -44,6 +44,7 @@ void init() {
   teensy::power_init();
   teensy::input_init();
   teensy::display_init();
+  teensy::link_init();
 }
 
 uint64_t now_us() {
@@ -58,6 +59,7 @@ bool poll() {
   clock_base_.micros = now;
   interrupts();
   teensy::input_read();
+  teensy::link_poll();
   return true;
 }
 
@@ -74,15 +76,6 @@ void start_timer(uint32_t period_us, TimerCallback callback) {
 void lock() { noInterrupts(); }
 void unlock() { interrupts(); }
 
-// The MIDI wire and the sync jack, still undriven: Serial1 and the pins WIRING.md
-// reserves are wired up in link_teensy.cpp, which arrives with the commit that
-// puts a scope on them. Until then the device says it has no port, which is the
-// truth about this firmware and not about the hardware.
-int read_clock_in(ClockIn*, int) { return 0; }
-bool send_clock_out(ClockPort, ClockPulse, uint64_t) { return false; }
-int midi_read(uint8_t*, int) { return 0; }
-int midi_send(const uint8_t*, int) { return 0; }
-bool midi_port_open() { return false; }
 
 void log(const char* line) {
   if (Serial) Serial.println(line);

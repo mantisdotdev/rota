@@ -44,7 +44,8 @@ struct InputEvent {
 // on is a settings row (§9.4), not something the HAL decides.
 enum class ClockPort : uint8_t { midi, sync };
 constexpr int kClockPortCount = 2;
-constexpr uint32_t kMidiByteUs = 320;  // 31250 baud, ten bits a byte: 3125 bytes a second and no more
+constexpr uint32_t kMidiBaud = 31250;   // §7.6 MIDI
+constexpr uint32_t kMidiByteUs = 320;   // ten bits a byte at kMidiBaud: 3125 bytes a second and no more
 
 // One pulse of somebody's clock. `tick` is a MIDI clock byte or one edge on the
 // sync jack; the other three are MIDI's transport messages, which the sync wire has

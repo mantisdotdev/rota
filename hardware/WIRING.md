@@ -29,8 +29,10 @@ How the EVT breadboard unit (hardware/BOM.md, Table 1) connects to the Teensy 4.
 | Volume encoder A / B / push | 29 / 30 / 31 | PEC11R (D-054) | | no |
 | Battery sense | 40 (A16) | BAT+ through 100 kΩ, 100 kΩ to ground | 2:1 divider; a straight line 3.3–4.15 V → 0–100 % until the production gauge (D-072) | no |
 | Headphone detect | 41 (A17) | Headphone jack tip switch, with a pull-up | Read as an analog level (D-065); the shield's own jack has no switch, so this is the panel jack | no |
-| MIDI in / out | 0 (RX1) / 1 (TX1) | H11L1M circuit / 33 Ω + 10 Ω | Reserved for io/; not driven | no |
-| Sync in / out | 32 / 34 | Sync jack through a divider / a series resistor | Reserved for io/; not driven | no |
+| MIDI in | 0 (RX1) | H11L1M circuit | Serial1 at 31250 baud; io/ lifts the real-time bytes (D-114) | no |
+| MIDI out | 1 (TX1) | 33 Ω + 10 Ω from 3.3 V | Serial1 at 31250 baud; two jacks, so a jam is two cables (D-111) | no |
+| Sync in | 32 | Series resistor + BAT54S clamp, internal pulldown (C-04) | Rising-edge interrupt; 2 PPQN, never driven while followed (C-01) | no |
+| Sync out | 34 | Series resistor to the jack tip | A 5 ms active-high pulse per 1/8 cycle (C-01) | no |
 | microSD | built-in slot (SDIO) | SanDisk Ultra, FAT32 | `SD.begin(BUILTIN_SDCARD)` | no |
 | PSRAM, QSPI flash | bottom pads | ESP-PSRAM64H on the small pads, W25Q128JVSIQ on the large | Not used by the firmware yet | no |
 | Speaker amp shutdown | none | PAM8302 SD from the headphone jack's switch | Hardware mute (D-050); no GPIO | no |

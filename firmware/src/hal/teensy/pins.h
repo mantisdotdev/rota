@@ -48,8 +48,13 @@ constexpr EncoderPins kEncoders[5] = {
 constexpr uint8_t kBatterySense = 40;    // A16
 constexpr uint8_t kHeadphoneSense = 41;  // A17
 
-// Reserved for io/ (not driven here): MIDI on Serial1 (0 RX, 1 TX); sync in 32,
-// sync out 34. Routed to the audio shield's unused sockets and left alone: 6, 10,
-// 11, 12, 13, 15.
+// The jam link and sync (§7.6, §11, D-111, D-114, C-01, C-04). MIDI is one UART —
+// Serial1, RX on 0 and TX on 1 — behind the H11L1M in and the resistor pair out
+// (D-055), one physical jack each. The sync jack is a rising edge in on 32 (through
+// the front end C-04 rules) and a 5 ms active-high pulse out on 34. Every number here
+// is from a datasheet or a library doc and has never been on a board (T-118).
+constexpr uint8_t kSyncIn = 32;
+constexpr uint8_t kSyncOut = 34;
+// Left alone, routed to the audio shield's unused sockets: 6, 10, 11, 12, 13, 15.
 
 }  // namespace hal::pins
