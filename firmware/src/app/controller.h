@@ -82,6 +82,9 @@ class Controller {
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);
   bool any_pad_held() const;
+  // Hold show (share view up) + a pad or dice is the jam send gesture (§11), not the
+  // pad's or dice's own meaning.
+  bool sending_gesture(const Model& model) const;
   bool following_ = false;  // a wire owns the tempo this pass; the speed knob then shows `ext` (§11)
 
   // The tutorial waits for one gesture per step (§8.5); the rest is ignored.

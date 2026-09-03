@@ -142,9 +142,21 @@ void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, Audio
   if (scheduler.waiting_for_clock()) say(model, now_us, kStatusUs, "waiting for clock");  // the count-in (D-112)
 }
 
+// Hold show opens the share view and keeps it up (D-093); a pad or dice pressed while
+// show is still held is the jam send gesture (§11), so it does not sound, mute, add a
+// hit, fill or clear.
+bool Controller::sending_gesture(const Model& model) const {
+  return model.view == View::share && buttons_[static_cast<int>(hal::Button::show)].down;
+}
+
 // Pads (§8.1, D-085): the sound at once, the mute while held, the edit on release.
 
 void Controller::pad_down(int pad, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
+  if (sending_gesture(model)) {  // hold show + pad: send that pad's track (§11), no sound and no mute
+    pads_[pad] = Press{true, at_us, true, false};  // used, so the release does nothing
+    model.jam_request = JamRequest{true, true, pad};
+    return;
+  }
   pads_[pad] = Press{true, at_us, false, false};
   // A pad is not an instrument in the song view or in settings: there it picks a song
   // (§9.6) or does nothing at all (D-096), so it neither sounds nor mutes its track —
@@ -305,6 +317,10 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
       say(model, at_us, kStatusUs, "undo");
       return;
     case hal::Button::dice: {
+      if (sending_gesture(model)) {  // hold show + dice: send the whole loop (§11)
+        model.jam_request = JamRequest{true, false, 0};
+        return;
+      }
       if (model.view == View::song) {
         say(model, at_us, kStatusUs, "hold dice to clear");
         return;

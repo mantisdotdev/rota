@@ -7,6 +7,7 @@
 #include "app/card.h"
 #include "app/clock.h"
 #include "app/controller.h"
+#include "app/jam.h"
 #include "app/params.h"
 #include "app/scheduler.h"
 #include "engine/kits/lofi.h"
@@ -44,6 +45,7 @@ constexpr uint32_t kFramePeriodUs = 16667;                    // §7.3: 60 fps
 constexpr int64_t kFlashFrames = sound::kSampleRate / 4;      // §9.1: 250 ms
 constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;  // a pad lights fully for 100 ms after its hit
 constexpr int kInputBatch = 32;
+constexpr int kMidiReadBatch = 256;  // a chunk of the wire a pass; a message spans passes if longer
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
@@ -60,6 +62,7 @@ HAL_BULK_MEMORY Model the_model(the_kit);
 Clock the_clock;
 Scheduler scheduler(the_kit, the_clock);
 Controller controller(the_kit);
+Jam the_jam;
 AudioPath audio;
 FiredLog the_fired_log;
 uint64_t last_frame_us = 0;
@@ -344,6 +347,7 @@ void init() {
   new (&the_clock) Clock();
   new (&scheduler) Scheduler(the_kit, the_clock);
   new (&controller) Controller(the_kit);
+  new (&the_jam) Jam();
   audio.reset();
   the_fired_log = FiredLog{};
   last_frame_us = 0;
@@ -372,12 +376,16 @@ void tick() {
   const int count = hal::read_input(events, kInputBatch);
   hal::ClockIn pulses[kClockInDrain];  // drained outside the lock, as input is
   const int pulse_count = hal::read_clock_in(pulses, kClockInDrain);
+  uint8_t midi_in[kMidiReadBatch];
+  const int midi_count = hal::midi_read(midi_in, kMidiReadBatch);
   hal::lock();
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   the_clock.follow(pulses, pulse_count, now_us, audio);  // latch the anchor, fold the wire in before the controller reads it
   controller.tick(now_us, the_model, scheduler, audio);
+  the_jam.step(the_model, the_kit, now_us, midi_in, midi_count);  // send the gesture, apply an arrival
   the_clock.set_ports(the_model.settings.midi_clock_out, the_model.settings.sync_out);
   hal::unlock();
+  the_jam.pump_out();  // meter the outgoing message onto the wire, outside the lock (D-114)
 
   Fired fired;
   while (audio.fired.pop(fired)) the_fired_log.append(fired);
