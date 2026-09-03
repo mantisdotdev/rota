@@ -298,7 +298,7 @@ One screen, no sub-menus (D-030). Shows the song number (1–8), the arrangement
 - hold dice: clear the arrangement (with undo). A dice press does nothing; the status line reads "hold dice to clear".
 - pads: tap one to switch to that song; an empty song becomes a copy of the current one. Everything is saved as it is made; there is no save gesture.
 - play: play the song from the top; press again to stop. With an empty arrangement nothing starts and the status line reads "song is empty".
-- show: back to the ring. Knobs, share and settings work as everywhere else; split, swap, skip and the pads' hold gestures are inactive here.
+- show: back to the ring. Knobs, share and settings work as everywhere else; split, swap and skip are inactive here, and so are the pads' hold gestures, with one exception: holding a pad whose song file will not parse replaces that song with the one on screen, which a tap refuses to do (D-107).
 
 ---
 

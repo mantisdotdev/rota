@@ -17,14 +17,18 @@ struct SongCode {
   char text[kSongCodeCapacity];  // NUL-terminated
 };
 
-// Sections A–D plus the arrangement (§6.8, D-025). Section states carry no
-// lineage of their own; the song has at most one.
+// Sections A–D plus the arrangement (§6.8, D-025). A song code carries at most one
+// lineage, the song's own; a section's State::lineage survives only where the
+// section is written as a section code, as the card writes it (D-104).
 struct Song {
   State sections[kSectionCount];
   uint8_t arrangement_length;  // 1–64
   char arrangement[kMaxArrangementLength];  // letters A–D, one cycle each
   char lineage[kLineageLength + 1];
 };
+
+bool operator==(const Song& a, const Song& b);
+inline bool operator!=(const Song& a, const Song& b) { return !(a == b); }
 
 // Result of a load. A code naming a kit the caller lacks loads with `kit`, says
 // so through kit_substituted and requested_kit, and encodes kit's id from then

@@ -16,6 +16,8 @@ hal_fake::Led leds_[hal::kPadCount];
 hal_fake::Led button_leds_[hal::kButtonCount];
 int brightness_ = 100;
 bool refuse_writes_ = false;
+int writes_ = 0;
+std::map<std::string, int> writes_by_path_;
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
 int presented_ = 0;
 std::map<std::string, std::vector<uint8_t>> files_;
@@ -35,6 +37,8 @@ void reset() {
   std::memset(button_leds_, 0, sizeof button_leds_);
   brightness_ = 100;
   refuse_writes_ = false;
+  writes_ = 0;
+  writes_by_path_.clear();
   std::memset(framebuffer_, 0, sizeof framebuffer_);
   presented_ = 0;
   files_.clear();
@@ -46,6 +50,11 @@ void push(const hal::InputEvent& event) { input_.push_back(event); }
 hal::AudioCallback audio_callback() { return audio_callback_; }
 hal::TimerCallback timer_callback() { return timer_callback_; }
 uint32_t timer_period_us() { return timer_period_us_; }
+int writes() { return writes_; }
+int writes(const char* path) {
+  const auto found = writes_by_path_.find(path);
+  return found == writes_by_path_.end() ? 0 : found->second;
+}
 const std::vector<std::string>& log() { return log_; }
 Led led(int pad) { return leds_[pad]; }
 Led button_led(int button) { return button_leds_[button]; }
@@ -94,15 +103,19 @@ void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue) {
 void show_leds() {}
 void set_brightness(int percent) { brightness_ = percent; }
 
-bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+  *size = 0;
   const auto found = files_.find(path);
-  if (found == files_.end() || found->second.size() > capacity) return false;
+  if (found == files_.end()) return FileRead::missing;
+  if (found->second.size() > capacity) return FileRead::unusable;
   std::memcpy(out, found->second.data(), found->second.size());
   *size = static_cast<uint32_t>(found->second.size());
-  return true;
+  return FileRead::ok;
 }
 
 bool write_file(const char* path, const uint8_t* data, uint32_t size) {
+  writes_ += 1;
+  writes_by_path_[path] += 1;
   if (refuse_writes_) return false;
   files_[path] = std::vector<uint8_t>(data, data + size);
   return true;

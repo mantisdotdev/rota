@@ -12,6 +12,7 @@
 #include "engine/kits/lofi.h"
 #include "engine/share.h"
 #include "engine_support.h"
+#include "io/share.h"
 #include "ui/color.h"
 #include "ui/draw.h"
 #include "ui/font.h"
@@ -550,13 +551,21 @@ TEST_CASE("T-88 The share view: the QR at 3 px per module, the code round it, ba
   CHECK(text_at(fb, beside + 7 * ui::kGlyphAdvance, ui::kShareTop + 2 * ui::kLineHeight, "e1.0.0-", kText) == false);
   CHECK(text_at(fb, beside, ui::kShareTop + 3 * ui::kLineHeight, "e1.0.0-", kText));
   CHECK(text_at(fb, beside, ui::kShareTop + 4 * ui::kLineHeight, "e10000-e1-e1-", kText));
-  CHECK(text_at(fb, beside, ui::kShareTop + 5 * ui::kLineHeight, "e1-e1-e1", kText));
+  // `~` does not break a row, so the last token is the empty rim track with the
+  // loop's own id stuck to it, and it takes a row of its own (T-59).
+  const std::string shared = io::shared_code(w.state(0), support::lofi()).text;
+  REQUIRE(shared.rfind(kClassicBeat, 0) == 0);
+  const std::string id = shared.substr(shared.size() - engine::kLineageLength - 1);
+  CHECK(text_at(fb, beside, ui::kShareTop + 5 * ui::kLineHeight, "e1-e1-", kText));
+  CHECK(text_at(fb, beside, ui::kShareTop + 6 * ui::kLineHeight, ("e1" + id).c_str(), kText));
   CHECK(text_at(fb, ui::kShareLeft, ui::kShareTop + side + ui::kShareCodeGap, ui::kScanHint, kLegend));  // what it is for
-  CHECK(decode_qr(grid) == std::string(ui::kPlayerUrlPrefix) + kClassicBeat);  // T-45 on the screen
+  CHECK(decode_qr(grid) == std::string(ui::kPlayerUrlPrefix) + shared);  // T-45 on the screen
 
   w.tap(Pad::rim);  // the view stays live: the code and its QR follow the edit
   w.frame();
-  CHECK(decode_qr(grid_from_screen(fb)) == std::string(ui::kPlayerUrlPrefix) + "RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e10");
+  const std::string edited = io::shared_code(w.state(0), support::lofi()).text;
+  CHECK(edited.rfind("RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e10~", 0) == 0);
+  CHECK(decode_qr(grid_from_screen(fb)) == std::string(ui::kPlayerUrlPrefix) + edited);
 
   w.press(Button::show);
   CHECK(w.model().view == app::View::ring);
@@ -667,7 +676,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   CHECK(w.model().settings.midi_clock_in);
 
   w.turn(Encoder::speed, 7);  // the cursor wraps
-  CHECK(w.model().settings.cursor == 0);
+  CHECK(w.model().settings_cursor == 0);
   CHECK(w.state(0).bpm == 100);  // the speed knob picked rows, it did not set the tempo
   w.turn(Encoder::fx, 1);        // the other knobs are what they always are
   CHECK(w.state(0).fx == 3);
@@ -681,7 +690,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   SUBCASE("play on the run tutorial row starts the tutorial on the ring") {
     open_settings(w, Button::undo, Button::show);
     w.turn(Encoder::speed, -2);
-    CHECK(w.model().settings.cursor == static_cast<int>(ui::SettingsRow::run_tutorial));
+    CHECK(w.model().settings_cursor == static_cast<int>(ui::SettingsRow::run_tutorial));
     w.press(Button::play);
     CHECK(w.model().tutorial.active);
     CHECK(w.model().view == app::View::ring);
@@ -696,7 +705,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
     w.press(Button::show);
     open_settings(w, Button::undo, Button::show);
     w.turn(Encoder::speed, -1);
-    CHECK(w.model().settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset));
+    CHECK(w.model().settings_cursor == static_cast<int>(ui::SettingsRow::factory_reset));
     w.press(Button::play);
     CHECK(w.status() == "hold play to reset");
     CHECK(engine::track_of(w.state(1), Pad::kick).step_count == 1);

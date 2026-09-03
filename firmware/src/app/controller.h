@@ -22,8 +22,6 @@ namespace app {
 constexpr uint32_t kHoldUs = 300000;          // a press longer than this is a hold
 constexpr uint32_t kArmTimeoutUs = 5000000;   // §8.2: arming times out after 5 s
 constexpr int kTapTempoTaps = 4;              // §8.2: four taps in rhythm set the bpm
-constexpr uint32_t kStatusUs = 1800000;       // §9.1: status text for 1.8 s
-constexpr uint32_t kKnobStatusUs = 1000000;   // §8.3: a knob's value for 1 s
 constexpr int kNoButton = -1;
 
 class Controller {
@@ -55,6 +53,7 @@ class Controller {
   void pad_down(int pad, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void pad_up(int pad, uint64_t at_us, Model& model, AudioPath& audio);
   void pad_tap(int pad, uint64_t at_us, Model& model);
+  void pad_hold(int pad, uint64_t at_us, Model& model);
   void button_down(hal::Button button, uint64_t at_us, Model& model, AudioPath& audio);
   void button_up(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void button_press(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
@@ -70,7 +69,9 @@ class Controller {
   void tap_tempo(uint64_t at_us, Model& model, AudioPath& audio);
   void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void stop_song(Model& model);
   void leave_song(Model& model, uint64_t at_us, const char* status);
+  void pick_song(int slot, uint64_t at_us, Model& model);
   void encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio);
   void track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model, engine::Section& section);
   void global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, engine::Section& section);

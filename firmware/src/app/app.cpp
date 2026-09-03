@@ -4,12 +4,14 @@
 #include <cstring>
 #include <new>
 
+#include "app/card.h"
 #include "app/controller.h"
 #include "app/params.h"
 #include "app/scheduler.h"
 #include "engine/kits/lofi.h"
 #include "engine/share.h"
 #include "hal/hal.h"
+#include "io/share.h"
 #include "ui/color.h"
 #include "ui/draw.h"
 #include "ui/leds.h"
@@ -42,7 +44,6 @@ constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;  // a pad lights fu
 constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
-constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
 const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
 
 const engine::Kit& kit = engine::kits::kLofi;
@@ -76,13 +77,15 @@ struct Frame {
   Arrangement arrangement;
   bool song_mode;
   int song_position;
-  bool song_filled;  // any section has steps
+  int song;  // the slot being played and edited, 1–8
+  bool filled[engine::kSongSlotCount];  // which slots hold a song, the one being edited included (§9.6)
   bool song_hint_dismissed;
   bool transport;
   bool roll;
   int current;
   int playing;
-  Settings settings;
+  io::Settings settings;
+  int settings_cursor;
   Tutorial tutorial;
   int armed;
   bool tap_tempo;
@@ -171,7 +174,7 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
   ring.playing = frame.transport;
   ring.bpm = frame_state.bpm;
   ring.section = letter_of(frame.current);
-  ring.song = kSongNumber;
+  ring.song = frame.song;
   ring.battery = hal::battery_percent();
   ring.flashes = flashes;
   ring.flash_count = collect_flashes(position);
@@ -180,8 +183,8 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
 
 void draw_song(uint16_t* framebuffer) {
   ui::SongModel song{};
-  song.song = kSongNumber;
-  song.filled[kSongNumber - 1] = frame.song_filled || frame.arrangement.length > 0;
+  song.song = frame.song;
+  for (int i = 0; i < engine::kSongSlotCount; ++i) song.filled[i] = frame.filled[i];
   song.letters = frame.arrangement.letters;
   song.length = frame.arrangement.length;
   song.playing = frame.song_mode ? frame.song_position : ui::kNoLetter;
@@ -190,9 +193,10 @@ void draw_song(uint16_t* framebuffer) {
 }
 
 // The QR is made again only when the code changes: an encode at version 10 is
-// milliseconds, a frame is not.
+// milliseconds, a frame is not. The code carries the loop's own id, not the id of
+// the loop it came from, which stays in the state for the footer (§10.2, D-105).
 void draw_share(uint16_t* framebuffer, int bottom) {
-  const engine::SectionCode code = engine::encode(frame_state, kit);
+  const engine::SectionCode code = io::shared_code(frame_state, kit);
   if (std::strcmp(code.text, shown_code.text) != 0) {
     shown_code = code;
     ui::encode_share_qr(shown_code.text, qr);
@@ -201,10 +205,10 @@ void draw_share(uint16_t* framebuffer, int bottom) {
 }
 
 void draw_settings(uint16_t* framebuffer) {
-  const Settings& settings = frame.settings;
+  const io::Settings& settings = frame.settings;
   const ui::SettingsModel model{frame_state.key,      frame_state.swing,      kit.id,           settings.brightness,
                                 settings.sleep_minutes, settings.midi_clock_in, settings.midi_clock_out, settings.sync_in,
-                                settings.sync_out,      kFirmwareVersion,       settings.cursor};
+                                settings.sync_out,      kFirmwareVersion,       frame.settings_cursor};
   ui::draw_settings_view(framebuffer, model);
 }
 
@@ -221,16 +225,20 @@ void draw(uint64_t now_us) {
   frame.arrangement = the_model.arrangement;
   frame.song_mode = the_model.song_mode;
   frame.song_position = the_model.song_position;
-  frame.song_filled = false;
+  frame.song = the_model.settings.song;
+  for (int i = 0; i < engine::kSongSlotCount; ++i) frame.filled[i] = the_model.song_slots[i] != Slot::empty;
+  // The song being edited counts as filled the moment it has something in it, card or no card.
   for (int i = 0; i < engine::kSectionCount; ++i) {
-    if (!is_empty(the_model.sections[i].state())) frame.song_filled = true;
+    if (!is_empty(the_model.sections[i].state())) frame.filled[frame.song - 1] = true;
   }
+  if (the_model.arrangement.length > 0) frame.filled[frame.song - 1] = true;
   frame.song_hint_dismissed = the_model.song_hint_dismissed;
   frame.transport = the_model.transport;
   frame.roll = the_model.roll;
   frame.current = the_model.current;
   frame.playing = the_model.playing;
   frame.settings = the_model.settings;
+  frame.settings_cursor = the_model.settings_cursor;
   frame.tutorial = the_model.tutorial;
   frame.armed = controller.armed();
   frame.tap_tempo = controller.tapping_tempo();
@@ -309,7 +317,7 @@ uint8_t tutorial_byte(const Model& model) { return model.tutorial.active ? kTuto
 bool tutorial_done() {
   uint8_t flag = 0;
   uint32_t size = 0;
-  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) && size == 1 && flag == kTutorialRan;
+  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok && size == 1 && flag == kTutorialRan;
 }
 
 }  // namespace
@@ -319,6 +327,7 @@ bool tutorial_done() {
 // allocation, and it keeps an 85 KB model off the stack.
 void init(const sound::SampleBank& samples) {
   const bool first_run = !tutorial_done();
+  read_card(kit);  // both reads happen before the lock: a card takes milliseconds (D-104)
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(kit);
@@ -332,6 +341,7 @@ void init(const sound::SampleBank& samples) {
   shown_code.text[0] = '\0';
   applied_brightness = -1;
   the_model.tutorial = Tutorial{first_run, 0, false};
+  apply_card(the_model);  // the settings and the song the device was left on
   audio.init(sound_engine, kit, samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);
@@ -377,6 +387,7 @@ void tick() {
   draw(now_us);
   hal::present();
   light_leds(frame_position, frame_state);
+  keep_card(now_us, the_model, kit);
   if (frame.settings.brightness != applied_brightness) {
     applied_brightness = frame.settings.brightness;
     hal::set_brightness(applied_brightness);

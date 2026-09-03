@@ -55,6 +55,16 @@ struct World {
     REQUIRE(hal_fake::timer_callback() != nullptr);
   }
 
+  // A power cycle: the app starts again on the same card, which is where anything
+  // that outlives one has to be (T-56, T-92, T-99).
+  void reboot() {
+    const sound::SampleBank silent{};
+    app::init(silent);
+    fired.clear();
+    seen = 0;
+    origin = 0;
+  }
+
   void collect() {
     const app::FiredLog& log = app::fired_log();
     while (seen < log.total) fired.push_back(log.at(seen++));

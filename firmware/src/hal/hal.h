@@ -86,10 +86,16 @@ void show_leds();
 // The screen's backlight, 0–100 (§9.4).
 void set_brightness(int percent);
 
+// Whether a file could be read. `ok` means `out` holds the whole file and `*size` is
+// its length; `unusable` means the file is there but did not come back — too big for
+// the buffer, or a read that failed; `missing` means there is no such file. A card is
+// a boundary and io/ has to tell an absent file from one it cannot use, so existence
+// is said in the result rather than encoded in a size (D-104).
+enum class FileRead : uint8_t { missing, unusable, ok };
+
 // Whole files on the device's storage, by a path relative to its root. read_file
-// stores at most `capacity` bytes and the file's size; false when the file is
-// missing or larger than the buffer.
-bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size);
+// stores at most `capacity` bytes; `*size` is meaningful only with `ok`.
+FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size);
 bool write_file(const char* path, const uint8_t* data, uint32_t size);
 
 // Power (§7.7, §7.4): 0–100, and whether the headphone jack has a plug in it.
