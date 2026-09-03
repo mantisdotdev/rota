@@ -128,6 +128,13 @@ void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, Audio
       button_hold(static_cast<hal::Button>(i), now_us, model, scheduler, audio);
     }
   }
+  for (int i = 0; i < engine::kTrackCount; ++i) {
+    Press& press = pads_[i];
+    if (press.down && !press.hold_fired && held_for(press.since_us, now_us) >= kHoldUs) {
+      press.hold_fired = true;
+      pad_hold(i, now_us, model);
+    }
+  }
 }
 
 // Pads (§8.1, D-085): the sound at once, the mute while held, the edit on release.
@@ -569,9 +576,28 @@ void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
 // through is about to be another song's (T-56).
 void Controller::pick_song(int slot, uint64_t at_us, Model& model) {
   if (slot == model.settings.song || model.picked_song != io::kNoSlot) return;
+  // A file nothing could be read from is not an empty slot to copy over: the tap says
+  // so and teaches the hold that does replace it, as a dice press teaches its hold (D-107).
+  if (model.song_slots[slot - io::kFirstSlot] == Slot::unreadable) {
+    say(model, at_us, kStatusUs, "hold to replace song %d", slot);
+    return;
+  }
   model.picked_song = slot;
   stop_song(model);
   say(model, at_us, kStatusUs, "song %d", slot);
+}
+
+// §9.6, D-107: the one hold gesture the pads have in the song view, and it is live
+// only on a slot the device already knows it cannot read — so no hold can ever
+// destroy a song the player could still open.
+void Controller::pad_hold(int pad, uint64_t at_us, Model& model) {
+  if (model.view != View::song || model.picked_song != io::kNoSlot) return;
+  if (model.song_slots[pad] != Slot::unreadable) return;
+  model.song_hint_dismissed = true;
+  model.picked_song = pad + io::kFirstSlot;
+  model.replace_picked = true;
+  stop_song(model);
+  say(model, at_us, kStatusUs, "song %d replaced", pad + io::kFirstSlot);
 }
 
 // Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob

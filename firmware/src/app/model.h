@@ -18,6 +18,9 @@ namespace app {
 // (§9.3) and hold undo + show the settings (§9.4); a show press leaves either (D-093, D-096).
 enum class View : uint8_t { ring, text, song, share, settings };
 
+// A status is at most this long, but the message row fits 25 characters at 12 px
+// across a 320 px screen (ui::kGlyphAdvance, ui::kMargin): a longer line is clipped
+// at the screen's edge, so keep what the player must read inside 25.
 constexpr int kStatusCapacity = 40;
 constexpr uint32_t kStatusUs = 1800000;      // §9.1: status text for 1.8 s
 constexpr uint32_t kKnobStatusUs = 1000000;  // §8.3: a knob's value for 1 s
@@ -48,6 +51,11 @@ struct Tutorial {
   bool save_pending;  // the done flag must be written; app::tick does it outside the lock
 };
 
+// What the card holds for a song slot, as the song view draws it and a pick reads it
+// (§9.6): nothing yet, a song, or a file nothing could be read from. The last is not
+// an empty slot — a pick refuses it and only a hold replaces it (T-97, D-107).
+enum class Slot : uint8_t { empty, filled, unreadable };
+
 constexpr int kNoSection = -1;
 constexpr const char* kFirmwareVersion = "0.1.0";      // shown in settings; release tooling will stamp it (D-096)
 // One byte on the card: kTutorialRan once the tutorial ran or was skipped.
@@ -76,11 +84,12 @@ struct Model {
   Status knob;
   io::Settings settings;  // the §9.4 rows the card keeps, and the song they name
   int settings_cursor;    // the selected row, a ui::SettingsRow; where the view was, not a setting
-  bool song_filled[engine::kSongSlotCount];  // which slots hold a song, for the song view's tiles (§9.6)
+  Slot song_slots[engine::kSongSlotCount];  // what the song view's tiles show (§9.6)
   // The card work app::tick does outside the lock, because a card takes milliseconds
   // and the scheduler's timer must not wait for one (D-104).
-  int picked_song;     // io::kNoSlot, or the slot the song view's pads picked
-  bool erase_pending;  // a factory reset asked for every slot to be emptied (§9.4)
+  int picked_song;      // io::kNoSlot, or the slot the song view's pads picked
+  bool replace_picked;  // a hold, not a tap: copy over the slot rather than reading it (D-107)
+  bool erase_pending;   // a factory reset asked for every slot to be emptied (§9.4)
   Tutorial tutorial;
   engine::Tenths master_volume;  // §9.5: −6 dB by default, one detent 0.1 (D-087)
 };

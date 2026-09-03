@@ -193,8 +193,8 @@ TEST_CASE("T-56 A pad in the song view picks a song, an empty slot copies this o
   CHECK(w.model().settings.song == 1);
   CHECK(engine::track_of(w.state(0), Pad::kick).step_count == 4);
   CHECK(w.model().arrangement.length == 2);
-  CHECK(w.model().song_filled[1]);  // the song view's tiles know song 2 is there
-  CHECK_FALSE(w.model().song_filled[2]);
+  CHECK(w.model().song_slots[1] != app::Slot::empty);  // the song view's tiles know song 2 is there
+  CHECK(w.model().song_slots[2] == app::Slot::empty);
 
   w.press(Button::show);
   w.press(Button::show);
@@ -255,7 +255,7 @@ TEST_CASE("T-89 A factory reset empties the card too, so the reset survives the 
   CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::kick)));
   CHECK(w.state(0).chance == engine::make_state(kit()).chance);
   CHECK(w.model().settings.song == 1);
-  for (const bool filled : w.model().song_filled) CHECK_FALSE(filled);
+  for (const app::Slot slot : w.model().song_slots) CHECK(slot == app::Slot::empty);
 }
 
 TEST_CASE("T-59 A shared loop carries its own id, so the loop made from it can say what it is based on") {
@@ -300,12 +300,12 @@ TEST_CASE("T-99 A pick the card cannot carry out leaves the player where they ar
     const std::string junk = "not a code\n";
     put("songs/2.txt", junk);
     w.reboot();
-    CHECK(w.model().song_filled[1]);  // taken, though nothing could be read from it
+    CHECK(w.model().song_slots[1] == app::Slot::unreadable);  // taken, though nothing could be read from it
     w.press(Button::show);
     w.press(Button::show);
     w.tap(Pad::snare);  // pad 2
     w.frame();
-    CHECK(w.status() == "song 2 did not load");
+    CHECK(w.status() == "hold to replace song 2");
     CHECK(w.model().settings.song == 1);  // still on song 1
     CHECK(file("songs/2.txt") == junk);   // and somebody's song is still there
   }
@@ -358,7 +358,7 @@ TEST_CASE("T-89 A factory reset the card refuses stays pending, and finishes whe
   CHECK_FALSE(w.model().erase_pending);
   w.reboot();
   CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::kick)));
-  for (const bool filled : w.model().song_filled) CHECK_FALSE(filled);
+  for (const app::Slot slot : w.model().song_slots) CHECK(slot == app::Slot::empty);
 }
 
 TEST_CASE("T-97 A file that will not parse is never written over until the player means to") {
@@ -373,7 +373,7 @@ TEST_CASE("T-97 A file that will not parse is never written over until the playe
 
   w.reboot();
   REQUIRE(w.model().settings.song == 2);
-  CHECK(w.model().song_filled[1]);  // taken, though nothing could be read from it
+  CHECK(w.model().song_slots[1] == app::Slot::unreadable);  // taken, though nothing could be read from it
   w.run_for(2 * kSecond);
   CHECK(file("songs/2.txt") == junk);  // an idle device writes nothing over it
 
@@ -389,13 +389,50 @@ TEST_CASE("T-97 A file that will not parse is never written over until the playe
   w.frame();
   CHECK(w.model().settings.song == 3);
   CHECK(file("songs/2.txt") == junk);  // leaving it does not write the power-on song over it
-  CHECK(w.model().song_filled[1]);
+  CHECK(w.model().song_slots[1] == app::Slot::unreadable);
 
-  w.tap(Pad::snare);  // and it cannot be opened again while it is what it is
+  w.press(Button::show);  // a loop worth keeping, so the replacement has something in it
+  w.tap(Pad::kick);
+  w.press(Button::show);
+  w.press(Button::show);
+  w.tap(Pad::snare);  // a tap will not open it, and says what will
   w.frame();
-  CHECK(w.status() == "song 2 did not load");
+  CHECK(w.status() == "hold to replace song 2");
   CHECK(w.model().settings.song == 3);
   CHECK(file("songs/2.txt") == junk);
+
+  w.pad_down(Pad::snare);  // the hold means it (§9.6, D-107)
+  w.run_for(kSecond / 2);
+  CHECK(w.status() == "song 2 replaced");
+  w.pad_up(Pad::snare);
+  w.frame();
+  CHECK(w.model().settings.song == 2);
+  CHECK(lines_of(file("songs/2.txt")).size() == 5);   // the loop that was on screen, copied over it
+  CHECK(w.model().song_slots[1] == app::Slot::filled);
+  w.reboot();
+  CHECK(w.model().settings.song == 2);
+  CHECK(engine::track_of(w.state(0), Pad::kick).step_count == 1);
+}
+
+TEST_CASE("T-97 A hold on a song that reads perfectly well does nothing at all") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.press(Button::show);
+  w.press(Button::show);
+  w.tap(Pad::snare);  // song 2, a copy of song 1
+  w.frame();
+  REQUIRE(w.model().settings.song == 2);
+  w.tap(Pad::kick);  // back to song 1
+  w.frame();
+  REQUIRE(w.model().settings.song == 1);
+  const std::string song_two = file("songs/2.txt");
+
+  w.pad_down(Pad::snare);  // a hold on a slot that loads is not a replace
+  w.run_for(kSecond / 2);
+  w.pad_up(Pad::snare);
+  w.frame();
+  CHECK(w.model().settings.song == 1);       // and not a pick either: a hold is not a tap
+  CHECK(file("songs/2.txt") == song_two);    // song 2 is untouched
 }
 
 TEST_CASE("T-99 A boot on a card with no song writes nothing until the player plays something") {

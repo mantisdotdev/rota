@@ -226,7 +226,7 @@ void draw(uint64_t now_us) {
   frame.song_mode = the_model.song_mode;
   frame.song_position = the_model.song_position;
   frame.song = the_model.settings.song;
-  for (int i = 0; i < engine::kSongSlotCount; ++i) frame.filled[i] = the_model.song_filled[i];
+  for (int i = 0; i < engine::kSongSlotCount; ++i) frame.filled[i] = the_model.song_slots[i] != Slot::empty;
   // The song being edited counts as filled the moment it has something in it, card or no card.
   for (int i = 0; i < engine::kSectionCount; ++i) {
     if (!is_empty(the_model.sections[i].state())) frame.filled[frame.song - 1] = true;

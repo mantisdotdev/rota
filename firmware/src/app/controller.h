@@ -53,6 +53,7 @@ class Controller {
   void pad_down(int pad, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void pad_up(int pad, uint64_t at_us, Model& model, AudioPath& audio);
   void pad_tap(int pad, uint64_t at_us, Model& model);
+  void pad_hold(int pad, uint64_t at_us, Model& model);
   void button_down(hal::Button button, uint64_t at_us, Model& model, AudioPath& audio);
   void button_up(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void button_press(hal::Button button, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);

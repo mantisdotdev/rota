@@ -24,7 +24,7 @@ engine::Song saved;   // what the card took, when it did
 engine::Song loaded;  // the slot a pick asked for, or the boot song
 io::Settings saved_settings = io::kDefaultSettings;
 io::Settings boot_settings = io::kDefaultSettings;
-bool boot_filled[engine::kSongSlotCount];
+Slot boot_slots[engine::kSongSlotCount];
 // The open slot holds a file nothing could be read from, and the player has not
 // changed anything since. Writing the power-on song over it would destroy it for
 // nothing, so it is left alone until an edit means to replace it (T-97).
@@ -60,16 +60,22 @@ void agree(const engine::Song& song, const io::Settings& settings) {
 // did not parse and might still be somebody's song.
 void refuse_pick(Model& model, uint64_t now_us, int picked, const char* text) {
   hal::lock();
-  if (model.picked_song == picked) model.picked_song = io::kNoSlot;  // a newer pick is not this one
+  if (model.picked_song == picked) {  // a newer pick is not this one
+    model.picked_song = io::kNoSlot;
+    model.replace_picked = false;
+  }
   say(model.status, now_us, kStatusUs, text);
   hal::unlock();
 }
+
+Slot state_of(const engine::Song& song) { return is_empty(song) ? Slot::empty : Slot::filled; }
 
 // A pick from the song view (§9.6, T-56): what is on screen goes back to its own
 // slot, and the slot picked either comes back from the card or, being empty, becomes
 // a copy of what is on screen — which is a save, not a change of what is playing.
 void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit) {
   const int from = model.settings.song;
+  const bool replace = model.replace_picked;  // a hold: copy over the slot, do not read it (D-107)
   const bool leave_alone = active_invalid && staged == saved;  // nothing of the player's to write over it
   char refusal[kStatusFormatCapacity];
   if (!leave_alone && !io::save_song(from, kit, staged)) {
@@ -78,9 +84,13 @@ void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit
     refuse_pick(model, now_us, slot, refusal);
     return;
   }
-  const io::LoadResult result = io::load_song(slot, kit, loaded);
+  const io::LoadResult result = replace ? io::LoadResult::missing : io::load_song(slot, kit, loaded);
   if (result == io::LoadResult::invalid) {
-    std::snprintf(refusal, sizeof refusal, "song %d did not load", slot);
+    // A file that went bad since boot: mark it so the hold that replaces it works (D-107).
+    hal::lock();
+    model.song_slots[slot_index(slot)] = Slot::unreadable;
+    hal::unlock();
+    std::snprintf(refusal, sizeof refusal, "hold to replace song %d", slot);
     refuse_pick(model, now_us, slot, refusal);
     return;
   }
@@ -91,9 +101,12 @@ void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit
   hal::lock();
   if (has_song) set_song(model, loaded);
   model.settings.song = slot;
-  model.song_filled[slot_index(from)] = leave_alone || !is_empty(staged);  // its file is still there
-  model.song_filled[slot_index(slot)] = has_song || !is_empty(staged);
-  if (model.picked_song == slot) model.picked_song = io::kNoSlot;  // a newer pick is not this one
+  model.song_slots[slot_index(from)] = leave_alone ? Slot::unreadable : state_of(staged);  // its file is still there
+  model.song_slots[slot_index(slot)] = has_song ? state_of(loaded) : state_of(staged);
+  if (model.picked_song == slot) {  // a newer pick is not this one
+    model.picked_song = io::kNoSlot;
+    model.replace_picked = false;
+  }
   settings = model.settings;
   hal::unlock();
 
@@ -155,9 +168,11 @@ void read_card(const engine::Kit& kit) {
     const io::LoadResult result = io::load_song(slot, kit, into);
     if (is_current) current = result;
     // A file that did not parse still means the slot is taken: the song view draws it
-    // filled and a pick refuses it, rather than copying over somebody's song (T-97).
-    boot_filled[slot_index(slot)] =
-        result == io::LoadResult::invalid || (result == io::LoadResult::loaded && !is_empty(into));
+    // filled, a pick refuses it and a hold replaces it, rather than copying over
+    // somebody's song on a tap (T-97, D-107).
+    boot_slots[slot_index(slot)] = result == io::LoadResult::invalid ? Slot::unreadable
+                                   : result == io::LoadResult::loaded ? state_of(into)
+                                                                      : Slot::empty;
   }
   boot_active_invalid = current == io::LoadResult::invalid;
   if (current != io::LoadResult::loaded) {  // no file, or one nothing could be read from: the power-on song
@@ -169,7 +184,7 @@ void read_card(const engine::Kit& kit) {
 
 void apply_card(Model& model) {
   model.settings = boot_settings;
-  for (int i = 0; i < engine::kSongSlotCount; ++i) model.song_filled[i] = boot_filled[i];
+  for (int i = 0; i < engine::kSongSlotCount; ++i) model.song_slots[i] = boot_slots[i];
   set_song(model, loaded);
   song_of(model, staged);
   // An absent file and an empty song are the same thing, so a boot writes nothing:

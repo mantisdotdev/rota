@@ -25,8 +25,9 @@ Model::Model(const engine::Kit& kit)
       knob{{}, 0, 0},
       settings(io::kDefaultSettings),
       settings_cursor(0),
-      song_filled{},
+      song_slots{},
       picked_song(io::kNoSlot),
+      replace_picked(false),
       erase_pending(false),
       tutorial{false, 0, false},
       master_volume(kDefaultMasterVolume) {}
