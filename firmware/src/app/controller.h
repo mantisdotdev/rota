@@ -22,8 +22,6 @@ namespace app {
 constexpr uint32_t kHoldUs = 300000;          // a press longer than this is a hold
 constexpr uint32_t kArmTimeoutUs = 5000000;   // §8.2: arming times out after 5 s
 constexpr int kTapTempoTaps = 4;              // §8.2: four taps in rhythm set the bpm
-constexpr uint32_t kStatusUs = 1800000;       // §9.1: status text for 1.8 s
-constexpr uint32_t kKnobStatusUs = 1000000;   // §8.3: a knob's value for 1 s
 constexpr int kNoButton = -1;
 
 class Controller {

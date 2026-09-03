@@ -76,7 +76,7 @@ TEST_CASE("T-97 A song file keeps the four sections, their lineage and the arran
   const engine::Song song = made_song();
   REQUIRE(io::save_song(3, kit(), song));
   engine::Song back{};
-  REQUIRE(io::load_song(3, kit(), back));
+  REQUIRE(io::load_song(3, kit(), back) == io::LoadResult::loaded);
   CHECK(back == song);
   CHECK(std::string(back.sections[1].lineage) == "k9z2ab");  // no RT2S code carries a section's own lineage
   CHECK(back.sections[1].bpm == 105);
@@ -89,23 +89,41 @@ TEST_CASE("T-97 A song file keeps the four sections, their lineage and the arran
   engine::Song without = song;  // an empty arrangement, which no RT2S code can express
   without.arrangement_length = 0;
   REQUIRE(io::save_song(3, kit(), without));
-  REQUIRE(io::load_song(3, kit(), back));
+  REQUIRE(io::load_song(3, kit(), back) == io::LoadResult::loaded);
   CHECK(back == without);
   CHECK(lines_of(file("songs/3.txt")).size() == 5);
 
   std::string junk;  // the third section is not a code
   for (int i = 0; i < 5; ++i) junk += (i == 2 ? std::string("not a code") : written[i]) + "\n";
   put("songs/4.txt", junk);
-  CHECK_FALSE(io::load_song(4, kit(), back));
-  CHECK(file("songs/4.txt") == junk);  // nothing on the card was changed
+  CHECK(io::load_song(4, kit(), back) == io::LoadResult::invalid);  // and not `missing`: the slot is taken
+  CHECK(file("songs/4.txt") == junk);                               // nothing on the card was changed
   CHECK(logged("songs/4.txt"));
 
   put("songs/5.txt", written[0] + "\n");  // one line, not five
-  CHECK_FALSE(io::load_song(5, kit(), back));
+  CHECK(io::load_song(5, kit(), back) == io::LoadResult::invalid);
+  CHECK(io::load_song(6, kit(), back) == io::LoadResult::missing);  // no file: an empty slot a pick may copy over
 
   hal_fake::refuse_writes(true);
   CHECK_FALSE(io::save_song(6, kit(), song));
   CHECK(file("songs/6.txt").empty());
+}
+
+TEST_CASE("T-97 A song's own lineage survives the model, not only the file") {
+  World w;
+  engine::Song song{};
+  for (engine::State& section : song.sections) section = engine::make_state(kit());
+  song.arrangement_length = 2;
+  std::memcpy(song.arrangement, "AB", 2);
+  std::strcpy(song.lineage, "k9z2ab");  // loaded from a song code that carried one
+  REQUIRE(io::save_song(1, kit(), song));
+  CHECK(lines_of(file("songs/1.txt"))[4] == "AB~k9z2ab");
+
+  w.reboot();  // the model takes it off the card
+  CHECK(std::string(w.model().song_lineage) == "k9z2ab");
+  w.tap(Pad::kick);  // and an edit writes it back rather than dropping it
+  w.run_for(kSecond + kSecond / 10);
+  CHECK(lines_of(file("songs/1.txt"))[4] == "AB~k9z2ab");
 }
 
 TEST_CASE("T-98 The settings file keeps the rows and the open song, and ignores what it cannot read") {
@@ -123,6 +141,12 @@ TEST_CASE("T-98 The settings file keeps the rows and the open song, and ignores 
   CHECK(back.sleep_minutes == 30);
   CHECK(back.midi_clock_in == io::kDefaultSettings.midi_clock_in);   // 7 is not a flag
   CHECK(back.sync_out == io::kDefaultSettings.sync_out);             // the row is not in the file
+
+  // A value the settings view could never set is not one the card gets to introduce.
+  put("settings.txt", "brightness=0\nsleep=999\n");
+  REQUIRE(io::load_settings(back));
+  CHECK(back.brightness == io::kDefaultSettings.brightness);
+  CHECK(back.sleep_minutes == io::kDefaultSettings.sleep_minutes);
 
   hal_fake::reset();
   CHECK_FALSE(io::load_settings(back));  // no file at all
@@ -257,4 +281,76 @@ TEST_CASE("T-59 A shared loop carries its own id, so the loop made from it can s
   CHECK(moved.find(id) == std::string::npos);                                  // its own id, not its parent's
   CHECK(moved.rfind('~') == moved.size() - engine::kLineageLength - 1);        // and exactly one id
   CHECK(std::string(grandchild.state().lineage) == id);                        // the share view still says based on it
+}
+
+TEST_CASE("T-99 A pick the card cannot carry out leaves the player where they are, with their loop") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.run_for(kSecond + kSecond / 10);  // song 1 is on the card
+  const std::string song_one = file("songs/1.txt");
+  REQUIRE_FALSE(song_one.empty());
+
+  SUBCASE("a slot whose file did not parse is not copied over") {
+    const std::string junk = "not a code\n";
+    put("songs/2.txt", junk);
+    w.reboot();
+    CHECK(w.model().song_filled[1]);  // taken, though nothing could be read from it
+    w.press(Button::show);
+    w.press(Button::show);
+    w.tap(Pad::snare);  // pad 2
+    w.frame();
+    CHECK(w.status() == "song 2 did not load");
+    CHECK(w.model().settings.song == 1);  // still on song 1
+    CHECK(file("songs/2.txt") == junk);   // and somebody's song is still there
+  }
+  SUBCASE("a card that will not take the song it is leaving does not lose it") {
+    w.tap(Pad::snare, 2);  // an edit the card has not taken yet
+    hal_fake::refuse_writes(true);
+    w.press(Button::show);
+    w.press(Button::show);
+    w.tap(Pad::hat);  // pad 3
+    w.frame();
+    CHECK(w.status() == "song 1 did not save");
+    CHECK(w.model().settings.song == 1);
+    CHECK(engine::track_of(w.state(0), Pad::snare).step_count == 4);  // the edit is still in hand
+
+    hal_fake::refuse_writes(false);  // and it reaches the card as soon as one takes it
+    w.run_for(kSecond + kSecond / 10);
+    CHECK(file("songs/1.txt") != song_one);
+    w.reboot();
+    CHECK(engine::track_of(w.state(0), Pad::snare).step_count == 4);
+  }
+}
+
+TEST_CASE("T-89 A factory reset the card refuses stays pending, and finishes when the card takes it") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.run_for(kSecond + kSecond / 10);
+  REQUIRE_FALSE(file("songs/1.txt").empty());
+  const std::string before = file("songs/1.txt");
+
+  hal_fake::refuse_writes(true);
+  w.button_down(Button::undo);
+  w.run_for(kSecond / 10);
+  w.button_down(Button::show);
+  w.run_for(kSecond / 2);
+  w.button_up(Button::show);
+  w.button_up(Button::undo);
+  REQUIRE(w.model().view == app::View::settings);
+  w.turn(Encoder::speed, -1);
+  w.hold(Button::play);
+  REQUIRE(w.status() == "reset");
+
+  const int refused = hal_fake::writes("songs/1.txt");
+  w.run_for(kSecond / 2);
+  CHECK(hal_fake::writes("songs/1.txt") == refused);  // one round of tries a second, not one a frame
+  CHECK(w.model().erase_pending);                     // and the reset is not forgotten
+  CHECK(file("songs/1.txt") == before);
+
+  hal_fake::refuse_writes(false);
+  w.run_for(2 * kSecond);
+  CHECK_FALSE(w.model().erase_pending);
+  w.reboot();
+  CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::kick)));
+  for (const bool filled : w.model().song_filled) CHECK_FALSE(filled);
 }

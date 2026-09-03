@@ -19,12 +19,8 @@ constexpr int kBpmPerDetent = 1;  // D-087
 constexpr uint64_t kMicrosPerMinute = 60000000;  // tap tempo: taps are beats (§6.1)
 constexpr int kSwingPerDetent = 5;   // hundredths (D-096)
 constexpr int kBrightnessPerDetent = 10;
-constexpr int kBrightnessMin = 10;
-constexpr int kBrightnessMax = 100;
 constexpr int kSwingMax = 100;
 constexpr int kRootCount = 12;
-constexpr int kSleepChoices[] = {0, 5, 10, 20, 30, 60};  // minutes; 0 is never
-constexpr int kSleepChoiceCount = 6;
 
 // Status copy (Appendix D): what happened, lowercase, specific.
 // "basses" keeps "2 basses, spread evenly" inside the message row's 25 columns.
@@ -71,9 +67,9 @@ int edited_sections(const Model& model, int out[2]) {
 }
 
 void announce(Status& status, uint64_t at_us, uint32_t duration_us, const char* format, va_list args) {
-  std::vsnprintf(status.text, sizeof status.text, format, args);
-  status.shown_at_us = at_us;
-  status.duration_us = duration_us;
+  char text[kStatusCapacity];
+  std::vsnprintf(text, sizeof text, format, args);
+  say(status, at_us, duration_us, text);
 }
 
 }  // namespace
@@ -713,14 +709,15 @@ void Controller::settings_turn(hal::Encoder encoder, int detents, Model& model) 
       }
       return;
     case ui::SettingsRow::brightness:
-      settings.brightness = clamped(settings.brightness + detents * kBrightnessPerDetent, kBrightnessMin, kBrightnessMax);
+      settings.brightness =
+          clamped(settings.brightness + detents * kBrightnessPerDetent, io::kBrightnessMin, io::kBrightnessMax);
       return;
     case ui::SettingsRow::sleep: {
       int choice = 0;
-      for (int i = 0; i < kSleepChoiceCount; ++i) {
-        if (kSleepChoices[i] == settings.sleep_minutes) choice = i;
+      for (int i = 0; i < io::kSleepChoiceCount; ++i) {
+        if (io::kSleepChoices[i] == settings.sleep_minutes) choice = i;
       }
-      settings.sleep_minutes = kSleepChoices[clamped(choice + detents, 0, kSleepChoiceCount - 1)];
+      settings.sleep_minutes = io::kSleepChoices[clamped(choice + detents, 0, io::kSleepChoiceCount - 1)];
       return;
     }
     case ui::SettingsRow::midi_clock_in:

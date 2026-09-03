@@ -1,5 +1,6 @@
 #include "app/model.h"
 
+#include <cstdio>
 #include <cstring>
 #include <new>
 
@@ -12,6 +13,7 @@ Model::Model(const engine::Kit& kit)
       playing(0),
       pending_section(kNoSection),
       arrangement{0, {}},
+      song_lineage{},
       song_mode(false),
       song_position(0),
       song_start_pending(false),
@@ -28,6 +30,12 @@ Model::Model(const engine::Kit& kit)
       erase_pending(false),
       tutorial{false, 0, false},
       master_volume(kDefaultMasterVolume) {}
+
+void say(Status& status, uint64_t at_us, uint32_t duration_us, const char* text) {
+  std::snprintf(status.text, sizeof status.text, "%s", text);
+  status.shown_at_us = at_us;
+  status.duration_us = duration_us;
+}
 
 bool is_empty(const engine::State& state) {
   for (int i = 0; i < engine::kTrackCount; ++i) {
@@ -56,7 +64,7 @@ void song_of(const Model& model, engine::Song& song) {
   }
   song.arrangement_length = model.arrangement.length;
   std::memcpy(song.arrangement, model.arrangement.letters, model.arrangement.length);
-  song.lineage[0] = '\0';  // a song's own lineage waits for T-59; nothing writes one yet
+  std::strcpy(song.lineage, model.song_lineage);  // what the card gave us, back as it was
 }
 
 // Placement new, as app::init and the factory reset use it: a section is 21 KB of
@@ -65,6 +73,7 @@ void set_song(Model& model, const engine::Song& song) {
   for (int i = 0; i < engine::kSectionCount; ++i) new (&model.sections[i]) engine::Section(song.sections[i]);
   model.arrangement.length = song.arrangement_length;
   std::memcpy(model.arrangement.letters, song.arrangement, song.arrangement_length);
+  std::strcpy(model.song_lineage, song.lineage);
 }
 
 }  // namespace app

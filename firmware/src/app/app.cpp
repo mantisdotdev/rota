@@ -327,6 +327,7 @@ bool tutorial_done() {
 // allocation, and it keeps an 85 KB model off the stack.
 void init(const sound::SampleBank& samples) {
   const bool first_run = !tutorial_done();
+  read_card(kit);  // both reads happen before the lock: a card takes milliseconds (D-104)
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(kit);
@@ -340,7 +341,7 @@ void init(const sound::SampleBank& samples) {
   shown_code.text[0] = '\0';
   applied_brightness = -1;
   the_model.tutorial = Tutorial{first_run, 0, false};
-  read_card(the_model, kit);  // the settings and the song the device was left on (D-104)
+  apply_card(the_model);  // the settings and the song the device was left on
   audio.init(sound_engine, kit, samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);

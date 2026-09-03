@@ -105,6 +105,15 @@ uint32_t append(uint32_t length, char c) {
   return length + 1;
 }
 
+// A row the settings view can reach: a value it cannot is not one the player could
+// ever set back, so the card does not get to introduce one (§9.4).
+bool is_sleep_choice(int minutes) {
+  for (const int choice : kSleepChoices) {
+    if (choice == minutes) return true;
+  }
+  return false;
+}
+
 // A settings line is `key=value`; the value is an integer, and a flag is 0 or 1.
 // Anything else — an unknown key, junk, a value outside the row's range — is left
 // as it is, so a card written by another firmware still loads what it shares.
@@ -123,8 +132,10 @@ void read_setting(char* line, Settings& settings) {
   if (digits == 0 || text[digits] != '\0') return;
   const bool flag = value <= 1;
   if (std::strcmp(key, "song") == 0 && value >= kFirstSlot && value <= kLastSlot) settings.song = value;
-  if (std::strcmp(key, "brightness") == 0 && value <= 100) settings.brightness = value;
-  if (std::strcmp(key, "sleep") == 0) settings.sleep_minutes = value;
+  if (std::strcmp(key, "brightness") == 0 && value >= kBrightnessMin && value <= kBrightnessMax) {
+    settings.brightness = value;
+  }
+  if (std::strcmp(key, "sleep") == 0 && is_sleep_choice(value)) settings.sleep_minutes = value;
   if (std::strcmp(key, "midi-in") == 0 && flag) settings.midi_clock_in = value == 1;
   if (std::strcmp(key, "midi-out") == 0 && flag) settings.midi_clock_out = value == 1;
   if (std::strcmp(key, "sync-in") == 0 && flag) settings.sync_in = value == 1;
@@ -139,28 +150,28 @@ bool operator==(const Settings& a, const Settings& b) {
          a.sync_out == b.sync_out;
 }
 
-bool load_song(int slot, const engine::Kit& kit, engine::Song& song) {
+LoadResult load_song(int slot, const engine::Kit& kit, engine::Song& song) {
   char path[kPathCapacity];
   song_path(slot, path);
-  if (!read_file(path, kSongFileCapacity)) return false;
+  if (!read_file(path, kSongFileCapacity)) return LoadResult::missing;
   char* lines[kSongLines];
   if (split_lines(lines, kSongLines) != kSongLines) {
     refuse(path, "is not four sections and an arrangement");
-    return false;
+    return LoadResult::invalid;
   }
   for (int s = 0; s < engine::kSectionCount; ++s) {
     const engine::Decoded decoded = engine::decode(lines[s], kit);
     if (!decoded.ok) {
       refuse(path, "holds a code that did not load");
-      return false;
+      return LoadResult::invalid;
     }
     song.sections[s] = decoded.state;
   }
   if (!read_arrangement(lines[engine::kSectionCount], song)) {
     refuse(path, "holds an arrangement that did not load");
-    return false;
+    return LoadResult::invalid;
   }
-  return true;
+  return LoadResult::loaded;
 }
 
 bool save_song(int slot, const engine::Kit& kit, const engine::Song& song) {

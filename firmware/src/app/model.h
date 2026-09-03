@@ -19,6 +19,8 @@ namespace app {
 enum class View : uint8_t { ring, text, song, share, settings };
 
 constexpr int kStatusCapacity = 40;
+constexpr uint32_t kStatusUs = 1800000;      // §9.1: status text for 1.8 s
+constexpr uint32_t kKnobStatusUs = 1000000;  // §8.3: a knob's value for 1 s
 
 // Transient text: 1.8 s for what happened in the bottom-left corner, 1 s for a
 // knob's value in the box over the middle (§9.1, D-098). duration_us 0 means
@@ -28,6 +30,11 @@ struct Status {
   uint64_t shown_at_us;
   uint32_t duration_us;
 };
+
+// Puts a line in the bottom-left corner for `duration_us` (§9.1, D-098). The caller
+// holds the lock; the input grammar formats through it and so does the card, which
+// is the only place that knows a slot did not load.
+void say(Status& status, uint64_t at_us, uint32_t duration_us, const char* text);
 
 struct Arrangement {
   uint8_t length;
@@ -57,6 +64,7 @@ struct Model {
                         // section press and the next cycle boundary, when a knob turns both (D-086)
   int pending_section;  // kNoSection, or where `playing` moves at the next cycle boundary
   Arrangement arrangement;
+  char song_lineage[engine::kLineageLength + 1];  // the id of the song this one was loaded from; empty otherwise
   bool song_mode;           // stepping through the arrangement (§6.8)
   int song_position;        // index of the letter playing
   bool song_start_pending;  // song play from the top at the next cycle boundary
