@@ -3,6 +3,8 @@
 // samples are loaded only where the scenario is about them.
 #pragma once
 
+#include <cstring>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -168,7 +170,7 @@ inline engine::Kit kit_with_sample_chord() {
   engine::Kit kit = lofi();
   engine::KitPad& chord = kit.pads[engine::index_of(engine::Pad::chord)];
   chord.voice = engine::Voice::sample;
-  chord.source = "tone.wav";
+  std::strcpy(chord.source, "tone.wav");
   chord.pitch_semitones = 0;
   chord.start = 0.0f;
   chord.decay = 1.0f;

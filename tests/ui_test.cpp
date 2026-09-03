@@ -829,8 +829,7 @@ TEST_CASE("T-22 Play skips the tutorial, the next boot does not run it, and step
   w.frame();
   CHECK_FALSE(has_text(screen(), "tap the kick"));
 
-  const sound::SampleBank silent{};
-  app::init(silent);  // the next boot reads the flag off the card
+  app::init();  // the next boot reads the flag off the card
   CHECK_FALSE(app::model().tutorial.active);
 }
 

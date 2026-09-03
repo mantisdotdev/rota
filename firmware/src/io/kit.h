@@ -3,10 +3,22 @@
 #include "engine/kit.h"
 #include "sound/voice.h"
 
-// A kit's samples, off the card (PRD §7.5, §12 rule 6). The kit itself is still the
-// one compiled in; this is the half that makes it audible on the device, where the
-// WAVs are `kits/<kit id>/<the pad's source>` on the microSD.
+// A kit, off the card (PRD §7.5, §12 rule 6, D-108, D-109). A kit lives in
+// `kits/<id>/` on the microSD: `kit.txt` says what the pads are and how they behave,
+// and the WAVs beside it are the sounds. tools/kit_builder.py writes both from the
+// kit.json a kit is authored in.
 namespace io {
+
+// A kit id as share-format §2 spells one: 1–12 of `a`–`z` and `0`–`9`. Everything that
+// reaches a path comes off a card, so nothing that could climb out of `kits/` is a name
+// this firmware will use (D-109).
+bool is_kit_id(const char* text);
+
+// Reads `kits/<id>/kit.txt` into `kit`. False when there is no such kit or the file
+// does not say what a kit is, which is logged; `kit` is then unspecified and the
+// caller keeps whatever it had. The file's own `id` must be the folder it was found
+// in, or the kit and its samples would be looked for in two different places.
+bool load_kit(const char* id, engine::Kit& kit);
 
 // Reads every sample pad's WAV into the memory hal::sample_memory() gives, and fills
 // `bank` with what was read. A pad whose file is missing or is not a sample this

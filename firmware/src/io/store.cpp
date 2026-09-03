@@ -3,7 +3,10 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine/limits.h"
 #include "hal/hal.h"
+#include "io/kit.h"
+#include "io/lines.h"
 
 namespace io {
 
@@ -54,24 +57,6 @@ hal::FileRead read_file(const char* path, uint32_t capacity) {
   if (size == 0) return hal::FileRead::unusable;
   file_[size] = '\0';
   return hal::FileRead::ok;
-}
-
-// Splits file_ into NUL-terminated lines in place. Returns how many, or -1 when
-// there are more than `capacity`; the empty piece after a trailing newline is not a line.
-int split_lines(char** lines, int capacity) {
-  int count = 0;
-  char* start = file_;
-  for (char* c = file_;; ++c) {
-    if (*c != kNewline && *c != '\0') continue;
-    const bool end = *c == '\0';
-    if (end && c == start) break;  // the file ended with its last newline
-    if (count == capacity) return -1;
-    *c = '\0';
-    lines[count++] = start;
-    start = c + 1;
-    if (end) break;
-  }
-  return count;
 }
 
 // `AABABBCD`, then an optional `~` and six base36 characters, as a song code ends
@@ -126,6 +111,10 @@ void read_setting(char* line, Settings& settings) {
   *separator = '\0';
   const char* key = line;
   const char* text = separator + 1;
+  if (std::strcmp(key, "kit") == 0) {  // a name, not a number, and the only one here
+    if (is_kit_id(text)) std::strcpy(settings.kit, text);  // and a name that cannot be a path
+    return;
+  }
   int value = 0;
   int digits = 0;
   for (const char* c = text; is_digit(*c); ++c) {
@@ -148,7 +137,7 @@ void read_setting(char* line, Settings& settings) {
 }  // namespace
 
 bool operator==(const Settings& a, const Settings& b) {
-  return a.song == b.song && a.brightness == b.brightness && a.sleep_minutes == b.sleep_minutes &&
+  return std::strcmp(a.kit, b.kit) == 0 && a.song == b.song && a.brightness == b.brightness && a.sleep_minutes == b.sleep_minutes &&
          a.midi_clock_in == b.midi_clock_in && a.midi_clock_out == b.midi_clock_out && a.sync_in == b.sync_in &&
          a.sync_out == b.sync_out;
 }
@@ -166,7 +155,7 @@ LoadResult load_song(int slot, const engine::Kit& kit, engine::Song& song) {
       break;
   }
   char* lines[kSongLines];
-  if (split_lines(lines, kSongLines) != kSongLines) {
+  if (split_lines(file_, lines, kSongLines) != kSongLines) {
     refuse(path, "is not four sections and an arrangement");
     return LoadResult::invalid;
   }
@@ -207,17 +196,18 @@ bool load_settings(Settings& settings) {
   settings = kDefaultSettings;
   if (read_file("settings.txt", kSettingsFileCapacity) != hal::FileRead::ok) return false;
   char* lines[kSettingsFileCapacity / 4];
-  const int count = split_lines(lines, static_cast<int>(kSettingsFileCapacity / 4));
+  const int count = split_lines(file_, lines, static_cast<int>(kSettingsFileCapacity / 4));
   if (count < 0) return false;
   for (int i = 0; i < count; ++i) read_setting(lines[i], settings);
   return true;
 }
 
 bool save_settings(const Settings& settings) {
-  const int length = std::snprintf(file_, kSettingsFileCapacity,
-                                   "song=%d\nbrightness=%d\nsleep=%d\nmidi-in=%d\nmidi-out=%d\nsync-in=%d\nsync-out=%d\n",
-                                   settings.song, settings.brightness, settings.sleep_minutes, settings.midi_clock_in,
-                                   settings.midi_clock_out, settings.sync_in, settings.sync_out);
+  const int length =
+      std::snprintf(file_, kSettingsFileCapacity,
+                    "kit=%s\nsong=%d\nbrightness=%d\nsleep=%d\nmidi-in=%d\nmidi-out=%d\nsync-in=%d\nsync-out=%d\n",
+                    settings.kit, settings.song, settings.brightness, settings.sleep_minutes, settings.midi_clock_in,
+                    settings.midi_clock_out, settings.sync_in, settings.sync_out);
   if (length <= 0) return false;
   return hal::write_file("settings.txt", reinterpret_cast<const uint8_t*>(file_), static_cast<uint32_t>(length));
 }

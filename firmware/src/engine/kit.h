@@ -9,6 +9,9 @@
 // is the source and tools/kit_builder.py generates engine/kits/<id>.h from it. The
 // engine reads sends, templates, progressions, the pluck sequence, dice loops and
 // the swing/filter/fx defaults; the voice fields are for sound/.
+//
+// Every string here is a fixed array rather than a pointer, so a kit read off the
+// card owns its own words and is the same type as the one compiled in (D-109).
 namespace engine {
 
 enum class Voice : uint8_t { sample, synth };
@@ -20,9 +23,9 @@ struct TapTemplate {
 };
 
 struct KitPad {
-  const char* name;
+  char name[kPadNameLength + 1];
   Voice voice;
-  const char* source;      // sample pads: the wav file; synth pads: the preset name
+  char source[kPadSourceLength + 1];  // sample pads: the wav file; synth pads: the preset name
   int8_t pitch_semitones;  // sample pads
   float start;             // sample pads: start point as a fraction of the sample
   float decay;             // sample pads: 1.0 = full length
@@ -47,17 +50,22 @@ struct Sidechain {
 };
 
 struct Kit {
-  const char* id;
+  char id[kKitIdLength + 1];
   KitPad pads[kTrackCount];
   DegreeList progressions[kModeCount];  // indexed by Mode
   DegreeList pluck_sequence;
   uint8_t dice_loop_count;
-  const char* dice_loops[kMaxDiceLoops];  // share codes; only their tracks are used (D-028)
+  char dice_loops[kMaxDiceLoops][kSectionCodeCapacity];  // share codes; only their tracks are used (D-028)
   uint8_t swing_hundredths;
   Tenths filter;
   Tenths fx;
   Sidechain sidechain;
 };
+
+// A kit read off a card and the one compiled in are the same kit or they are not:
+// the test that says so is what keeps tools/kit_builder.py's two outputs in step.
+bool operator==(const Kit& a, const Kit& b);
+inline bool operator!=(const Kit& a, const Kit& b) { return !(a == b); }
 
 inline const KitPad& pad_of(const Kit& kit, Pad pad) { return kit.pads[index_of(pad)]; }
 

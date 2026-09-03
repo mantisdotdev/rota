@@ -154,6 +154,29 @@ def cpp_float(value):
     return f"{float(value)!r}f"  # always carries a decimal point: 0.0f, not 0f
 
 
+BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def step_character(step):
+    """A step in the spelling share codes use (spec/share-format.md §2): `.` for a
+    rest, otherwise base36 of (hits − 1) × 8 + note. The device reads a kit's
+    templates with the same table, so there is one spelling for a step in this repo."""
+    hits, note = step
+    return "." if hits == 0 else BASE36[(hits - 1) * 8 + note]
+
+
+def hundredths(value, what):
+    """A fraction of a sample, 0.00–1.00. Whole hundredths only, so the kit file
+    carries an integer and the device needs no float parser (D-109)."""
+    number = finite_number(value, what)
+    if not 0.0 <= number <= 1.0:
+        raise KitError(f"{what} is 0.0 to 1.0, got {number}")
+    scaled = round(number * 100)
+    if abs(number * 100 - scaled) > 1e-9:
+        raise KitError(f"{what} must be a whole hundredth, got {number}")
+    return scaled
+
+
 def cpp_degree_list(values):
     return "{%d, {%s}}" % (len(values), ", ".join(str(v) for v in values))
 
@@ -255,6 +278,55 @@ inline constexpr Kit {variable}{{
 """
 
 
+def build_kit_text(kit, kit_dir):
+    """The kit as the device reads it off the card (D-109): one line a field, the
+    pads in the order the share format fixes, each pad's templates under it. Text,
+    because §7.6 shows the card over USB and §12 rule 6 wants a format anyone can
+    write a kit in."""
+    lines = [KIT_FILE_PREFIX, f"id={kit['id']}"]
+    lines.append(f"swing={hundredths(kit['swing'], 'swing')}")
+    lines.append(f"filter={tenths(kit['filter'], 'filter')}")
+    lines.append(f"fx={tenths(kit['fx'], 'fx')}")
+    sidechain = kit["sidechain"]
+    lines.append(
+        "sidechain=%d,%d,%d"
+        % (
+            1 if exact_bool(sidechain["on"], "sidechain on") else 0,
+            exact_int(sidechain["duck_db"], "sidechain duck_db"),
+            exact_int(sidechain["release_ms"], "sidechain release_ms"),
+        )
+    )
+    for mode in MODE_ORDER:
+        degrees = degree_list(kit["progressions"][mode], f"{mode} progression")
+        lines.append("progression=" + ",".join(str(d) for d in degrees))
+    lines.append("pluck=" + ",".join(str(d) for d in degree_list(kit["pluck_sequence"], "pluck sequence")))
+    for code in kit.get("dice_loops", []):
+        lines.append(f"dice={code}")
+    for pad in kit["pads"]:
+        what = f"pad {pad.get('name')!r}"
+        sample = pad["voice"] == "sample"
+        lines.append(
+            "pad=%s,%s,%s,%d,%d,%d,%d,%d"
+            % (
+                pad["name"],
+                pad["voice"],
+                pad["source"] if sample else pad["preset"],
+                exact_int(pad.get("pitch", 0), f"{what} pitch") if sample else 0,
+                hundredths(pad.get("start", 0), f"{what} start") if sample else 0,
+                hundredths(pad.get("decay", 1.0), f"{what} decay") if sample else 0,
+                0 if sample else exact_int(pad["octave"], f"{what} octave"),
+                tenths(pad["send"], f"{what} send"),
+            )
+        )
+        for template in pad.get("templates", []):
+            lines.append("template=" + "".join(step_character(s) for s in template_steps(template, what)))
+    return "\n".join(lines) + "\n"
+
+
+KIT_FILE_PREFIX = "RTK1"
+KIT_FILE_NAME = "kit.txt"
+
+
 def main(argv):
     if len(argv) != 3:
         print("usage: kit_builder.py spec/kits/<id>/kit.json firmware/src/engine/kits/<id>.h", file=sys.stderr)
@@ -264,12 +336,18 @@ def main(argv):
         with open(source_path, encoding="utf-8") as source:
             kit = json.load(source)
         header = build_header(kit, source_path, output_path)
+        kit_text = build_kit_text(kit, os.path.dirname(source_path))
     except (KitError, KeyError, ValueError, OSError) as error:
         print(f"kit_builder: {source_path}: {error}", file=sys.stderr)
         return EXIT_INVALID_KIT
     with open(output_path, "w", encoding="utf-8", newline="\n") as output:
         output.write(header)
-    print(f"kit_builder: wrote {output_path}")
+    # The card's copy goes beside the json it came from, so the folder a kit lives in
+    # is the folder the device reads.
+    kit_file = os.path.join(os.path.dirname(source_path), KIT_FILE_NAME)
+    with open(kit_file, "w", encoding="utf-8", newline="\n") as output:
+        output.write(kit_text)
+    print(f"kit_builder: wrote {output_path} and {kit_file}")
     return EXIT_OK
 
 
