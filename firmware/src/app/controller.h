@@ -67,6 +67,9 @@ class Controller {
   int other_section_held(int except) const;
   void play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void tap_tempo(uint64_t at_us, Model& model, AudioPath& audio);
+  // Write a tempo the wire measured into the sections a knob would reach, the same
+  // path tap tempo uses (§11, D-112, D-122); the wire never writes bpm itself.
+  void adopt_bpm(int bpm, uint64_t at_us, Model& model, AudioPath& audio);
   void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void stop_song(Model& model);
@@ -79,6 +82,10 @@ class Controller {
   void set_mute(Model& model, int pad, bool mute);
   void publish_params(const Model& model, AudioPath& audio);
   bool any_pad_held() const;
+  // Hold show (share view up) + a pad or dice is the jam send gesture (§11), not the
+  // pad's or dice's own meaning.
+  bool sending_gesture(const Model& model) const;
+  bool following_ = false;  // a wire owns the tempo this pass; the speed knob then shows `ext` (§11)
 
   // The tutorial waits for one gesture per step (§8.5); the rest is ignored.
   enum class TutorialEvent : uint8_t { kick_tap, snare_tap, chance_turn, share_opened, song_started };

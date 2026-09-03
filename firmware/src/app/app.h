@@ -28,5 +28,8 @@ void tick();
 const Model& model();
 const FiredLog& fired_log();
 int64_t audio_position();
+// The clock's follow state, for the ring and the tests (read on the main loop).
+bool clock_following();
+int clock_measured_bpm();
 
 }  // namespace app

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "app/audio_path.h"
+#include "app/clock.h"
 #include "app/model.h"
 #include "engine/events.h"
 #include "engine/kit.h"
@@ -25,7 +26,7 @@ constexpr int kStartDelayBlocks = 2;                        // the first beat be
 
 class Scheduler {
  public:
-  explicit Scheduler(const engine::Kit& kit);
+  Scheduler(const engine::Kit& kit, Clock& clock);
 
   // The session's seed for chance and humanize (D-034); set once at init.
   void set_seed(uint32_t seed);
@@ -36,6 +37,12 @@ class Scheduler {
   void start(Model& model, AudioPath& audio);
   void stop(AudioPath& audio);
   bool running() const { return running_; }
+  // Between play and the leader's next cycle, while a followed clock is being
+  // waited on (§11, D-112); the controller shows the count-in from it.
+  bool waiting_for_clock() const { return waiting_for_clock_; }
+  // The clock, so the controller can adopt a lost tempo and read `ext` without a
+  // new parameter threaded through its own signatures.
+  Clock& clock() { return *clock_; }
 
   // From the timer, under hal::lock(): hands the audio side every hit due before
   // its position plus the lookahead.
@@ -59,9 +66,11 @@ class Scheduler {
   engine::Fraction fraction_of(int64_t sample) const;
 
   const engine::Kit* kit_;
+  Clock* clock_;  // asked how long every beat is; shared, since app/ feeds it too
   uint32_t seed_;
   uint32_t generation_;
   bool running_;
+  bool waiting_for_clock_;  // play pressed while following: the count-in waits for the leader (D-112)
   int64_t beat_start_;
   int beat_frames_;
   int beat_in_cycle_;

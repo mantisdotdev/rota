@@ -331,7 +331,8 @@ TEST_CASE("T-83 The audio clock carries on past the 32-bit block count") {
     auto model = std::make_unique<app::Model>(engine::kits::kLofi);
     engine::tap(model->sections[0], Pad::kick, engine::kits::kLofi);  // a kick at 0
     model->transport = true;
-    app::Scheduler scheduler(engine::kits::kLofi);
+    app::Clock clock;
+    app::Scheduler scheduler(engine::kits::kLofi, clock);
     scheduler.set_seed(42);
     audio->reset(wrap - 4);
     scheduler.start(*model, *audio);  // the first beat two blocks on: cycle 0 starts at wrap - 2 blocks

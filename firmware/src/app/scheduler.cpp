@@ -7,11 +7,6 @@ namespace app {
 
 namespace {
 
-constexpr int kSecondsPerMinute = 60;
-
-// One beat is 60 / bpm seconds, rounded to a frame; a cycle is four of them (§6.1).
-int frames_of_beat(int bpm) { return (sound::kSampleRate * kSecondsPerMinute + bpm / 2) / bpm; }
-
 bool before(engine::Fraction time, int beat_in_cycle) {
   return static_cast<int64_t>(time.num) * kBeatsPerCycle < static_cast<int64_t>(beat_in_cycle) * time.den;
 }
@@ -24,13 +19,15 @@ engine::State without_mutes(const engine::State& state) {
 
 }  // namespace
 
-Scheduler::Scheduler(const engine::Kit& kit)
+Scheduler::Scheduler(const engine::Kit& kit, Clock& clock)
     : kit_(&kit),
+      clock_(&clock),
       seed_(0),
       generation_(0),
       running_(false),
+      waiting_for_clock_(false),
       beat_start_(0),
-      beat_frames_(frames_of_beat(engine::kDefaultBpm)),
+      beat_frames_(clock.beat_frames(engine::kDefaultBpm)),
       beat_in_cycle_(0),
       cycle_index_(0),
       previous_cycle_start_(0),
@@ -46,8 +43,14 @@ void Scheduler::set_seed(uint32_t seed) { seed_ = seed; }
 
 void Scheduler::start(Model& model, AudioPath& audio) {
   running_ = true;
+  clock_->start_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
+  if (clock_->following()) {  // §11, D-112: come in on the leader's cycle, so schedule no beat yet
+    waiting_for_clock_ = true;
+    return;  // generation was bumped first, so a stop still drops handed-over hits (T-82)
+  }
+  waiting_for_clock_ = false;
   const int64_t at = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
   scheduled_until_ = at;
   begin_beat(model, at, true, audio);
@@ -55,12 +58,29 @@ void Scheduler::start(Model& model, AudioPath& audio) {
 
 void Scheduler::stop(AudioPath& audio) {
   running_ = false;
+  waiting_for_clock_ = false;
+  clock_->stop_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
 }
 
 void Scheduler::tick(Model& model, AudioPath& audio) {
   if (!running_) return;
+  if (waiting_for_clock_) {
+    const int64_t not_before = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
+    int64_t at;
+    if (clock_->cycle_boundary(not_before, at)) {
+      waiting_for_clock_ = false;
+      scheduled_until_ = at;  // the first beat lands on the leader's cycle downbeat (D-112)
+      begin_beat(model, at, true, audio);
+    } else if (!clock_->following()) {  // the leader vanished during the count-in: free-run instead
+      waiting_for_clock_ = false;
+      scheduled_until_ = not_before;
+      begin_beat(model, not_before, true, audio);
+    } else {
+      return;  // still waiting; nothing is scheduled and nothing is driven out (no emit while counting in)
+    }
+  }
   const int64_t horizon = audio.position() + kLookaheadFrames;
   while (scheduled_until_ < horizon) {
     const int64_t beat_end = beat_start_ + beat_frames_;
@@ -69,9 +89,10 @@ void Scheduler::tick(Model& model, AudioPath& audio) {
       continue;
     }
     const int64_t until = beat_end < horizon ? beat_end : horizon;
-    if (!push_window(model, until, audio.scheduled)) return;  // the queue is full: the rest waits for the next tick
+    if (!push_window(model, until, audio.scheduled)) break;  // the queue is full: the rest waits for the next tick
     scheduled_until_ = until;
   }
+  clock_->emit_until(horizon, audio);
 }
 
 // A beat boundary: where an edit lands (§6.7). The playing section's live state
@@ -97,7 +118,7 @@ void Scheduler::begin_beat(Model& model, int64_t at, bool first, AudioPath& audi
   if (beat_in_cycle_ == 0) cross_cycle(model, first);
   const engine::State& live = model.sections[model.playing].state();
   playing_ = without_mutes(live);
-  beat_frames_ = frames_of_beat(playing_.bpm);
+  beat_frames_ = clock_->begin_beat(beat_start_, playing_.bpm);
   engine::events(playing_, *kit_, cycle_index_, seed_, list_);
   next_event_ = 0;
   while (next_event_ < list_.count && before(list_.items[next_event_].time, beat_in_cycle_)) ++next_event_;

@@ -33,6 +33,18 @@ struct Immediate {
   uint64_t pressed_us;  // when the platform saw the press; 0 = do not measure
 };
 
+// The two clocks side by side: the first frame of the block the audio side has just
+// rendered, and the microsecond it read while rendering it. app/ needs the pair both
+// ways — to turn a beat's frame into a deadline for the wire, and an arriving pulse's
+// stamp into a frame — and neither clock can answer for the other, since one counts
+// samples the codec asked for and the other counts real time. Published once a block;
+// the reader latches the newest pair it has seen rather than treating a mailbox that
+// answers false as a clock that stopped (D-114).
+struct AudioAnchor {
+  int64_t frames;
+  uint64_t time_us;
+};
+
 // A hit the sound engine was handed, with the frame it started on.
 struct Fired {
   int64_t sample;
@@ -87,6 +99,7 @@ class AudioPath {
   SpscQueue<Immediate, kImmediateQueueCapacity> immediate;
   SpscQueue<Fired, kFiredQueueCapacity> fired;
   Mailbox<sound::Params> params;
+  Mailbox<AudioAnchor> anchor;
   std::atomic<uint32_t> live_generation;  // written by the scheduler at start and stop
 
  private:

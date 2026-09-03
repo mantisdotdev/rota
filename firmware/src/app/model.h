@@ -39,6 +39,15 @@ struct Status {
 // is the only place that knows a slot did not load.
 void say(Status& status, uint64_t at_us, uint32_t duration_us, const char* text);
 
+// The show-held gesture (§11, D-111): a pad sends its track, dice the whole loop. The
+// controller records it here and app/jam.cpp carries it out, as a song pick is
+// recorded and the card carries it out.
+struct JamRequest {
+  bool pending = false;
+  bool track = false;  // false = the whole loop
+  int pad = 0;         // 0-7 when track
+};
+
 struct Arrangement {
   uint8_t length;
   char letters[engine::kMaxArrangementLength];  // A–D, one cycle each (§6.8)
@@ -73,6 +82,7 @@ struct Model {
   int pending_section;  // kNoSection, or where `playing` moves at the next cycle boundary
   Arrangement arrangement;
   char song_lineage[engine::kLineageLength + 1];  // the id of the song this one was loaded from; empty otherwise
+  JamRequest jam_request;  // the pending hold-show + pad/dice send (§11)
   bool song_mode;           // stepping through the arrangement (§6.8)
   int song_position;        // index of the letter playing
   bool song_start_pending;  // song play from the top at the next cycle boundary

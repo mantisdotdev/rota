@@ -5,7 +5,9 @@
 #include <new>
 
 #include "app/card.h"
+#include "app/clock.h"
 #include "app/controller.h"
+#include "app/jam.h"
 #include "app/params.h"
 #include "app/scheduler.h"
 #include "engine/kits/lofi.h"
@@ -43,6 +45,7 @@ constexpr uint32_t kFramePeriodUs = 16667;                    // §7.3: 60 fps
 constexpr int64_t kFlashFrames = sound::kSampleRate / 4;      // §9.1: 250 ms
 constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;  // a pad lights fully for 100 ms after its hit
 constexpr int kInputBatch = 32;
+constexpr int kMidiReadBatch = 256;  // a chunk of the wire a pass; a message spans passes if longer
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
@@ -56,8 +59,10 @@ sound::SampleBank the_samples;
 // scheduler's 30 KB event list and the queues stay with the ordinary statics.
 HAL_BULK_MEMORY sound::Engine sound_engine;
 HAL_BULK_MEMORY Model the_model(the_kit);
-Scheduler scheduler(the_kit);
+Clock the_clock;
+Scheduler scheduler(the_kit, the_clock);
 Controller controller(the_kit);
+Jam the_jam;
 AudioPath audio;
 FiredLog the_fired_log;
 uint64_t last_frame_us = 0;
@@ -95,6 +100,8 @@ struct Frame {
   bool tap_tempo;
   engine::Fraction playhead;
   uint32_t cycle_index;
+  bool following;      // a wire owns the tempo (§11): the ring shows it with `ext`
+  int measured_bpm;    // the followed tempo, for the ring's corner
 };
 Frame frame;
 
@@ -176,7 +183,8 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
   ring.cycle_index = frame.cycle_index;
   ring.playhead = frame.playhead;
   ring.playing = frame.transport;
-  ring.bpm = frame_state.bpm;
+  ring.external = frame.following;
+  ring.bpm = frame.following && frame.measured_bpm > 0 ? frame.measured_bpm : frame_state.bpm;
   ring.section = letter_of(frame.current);
   ring.song = frame.song;
   ring.battery = hal::battery_percent();
@@ -223,6 +231,8 @@ void draw(uint64_t now_us) {
   frame_position = position;
   frame.playhead = scheduler.playhead(position);
   frame.cycle_index = scheduler.cycle_index();
+  frame.following = the_clock.following();
+  frame.measured_bpm = the_clock.measured_bpm();
   frame.view = the_model.view;
   frame.status = the_model.status;
   frame.knob = the_model.knob;
@@ -334,8 +344,10 @@ void init() {
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(the_kit);
-  new (&scheduler) Scheduler(the_kit);
+  new (&the_clock) Clock();
+  new (&scheduler) Scheduler(the_kit, the_clock);
   new (&controller) Controller(the_kit);
+  new (&the_jam) Jam();
   audio.reset();
   the_fired_log = FiredLog{};
   last_frame_us = 0;
@@ -362,10 +374,20 @@ void tick() {
   last_tick_us = now_us;
   hal::InputEvent events[kInputBatch];
   const int count = hal::read_input(events, kInputBatch);
+  hal::ClockIn pulses[kClockInDrain];  // drained outside the lock, as input is
+  const int pulse_count = hal::read_clock_in(pulses, kClockInDrain);
+  uint8_t midi_in[kMidiReadBatch];
+  const int midi_count = hal::midi_read(midi_in, kMidiReadBatch);
   hal::lock();
+  // Fold the wire in first: a play release and the pulses that establish following can
+  // land in one pass, and start() must see this pass's clock, not the last one's (D-112).
+  the_clock.follow(pulses, pulse_count, now_us, audio);  // also latches the audio anchor
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   controller.tick(now_us, the_model, scheduler, audio);
+  the_jam.step(the_model, the_kit, now_us, midi_in, midi_count);  // send the gesture, apply an arrival
+  the_clock.set_ports(the_model.settings.midi_clock_out, the_model.settings.sync_out);
   hal::unlock();
+  the_jam.pump_out();  // meter the outgoing message onto the wire, outside the lock (D-114)
 
   Fired fired;
   while (audio.fired.pop(fired)) the_fired_log.append(fired);
@@ -391,6 +413,20 @@ int64_t audio_position() {
   const int64_t position = audio.position();
   hal::unlock();
   return position;
+}
+
+bool clock_following() {
+  hal::lock();
+  const bool following = the_clock.following();
+  hal::unlock();
+  return following;
+}
+
+int clock_measured_bpm() {
+  hal::lock();
+  const int bpm = the_clock.measured_bpm();
+  hal::unlock();
+  return bpm;
 }
 
 }  // namespace app

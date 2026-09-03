@@ -207,7 +207,7 @@ void init() {
   for (Led& led : button_leds_) led = Led{0, 0, 0};
   std::printf("hal/sdl: window %dx%d (screen %dx%d, scale %d)\n", kScreenWidth * kWindowScale,
               kLogicalHeight * kWindowScale, kScreenWidth, kScreenHeight, kWindowScale);
-  std::fflush(stdout);
+  std::fflush(stdout);  sdl::link_init();
 }
 
 uint64_t now_us() {
@@ -224,6 +224,7 @@ bool poll() {
     on_event(event);
     while (SDL_PollEvent(&event) != 0) on_event(event);
   }
+  sdl::link_poll();  // drain the jam link and emit any due clock pulse (§11)
   return !quit_requested;
 }
 
@@ -290,6 +291,7 @@ int battery_percent() {
 }
 
 bool headphones_inserted() { return false; }
+
 
 void log(const char* line) {
   std::puts(line);

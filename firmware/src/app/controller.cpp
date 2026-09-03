@@ -135,11 +135,28 @@ void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, Audio
       pad_hold(i, now_us, model);
     }
   }
+  // The wire, folded in by app::tick's Clock::follow just before this call.
+  following_ = scheduler.clock().following();
+  const int lost = scheduler.clock().take_lost_bpm();  // one-shot: a follow just ended
+  if (lost > 0) adopt_bpm(lost, now_us, model, audio);
+  if (scheduler.waiting_for_clock()) say(model, now_us, kStatusUs, "waiting for clock");  // the count-in (D-112)
+}
+
+// Hold show opens the share view and keeps it up (D-093); a pad or dice pressed while
+// show is still held is the jam send gesture (§11), so it does not sound, mute, add a
+// hit, fill or clear.
+bool Controller::sending_gesture(const Model& model) const {
+  return model.view == View::share && buttons_[static_cast<int>(hal::Button::show)].down;
 }
 
 // Pads (§8.1, D-085): the sound at once, the mute while held, the edit on release.
 
 void Controller::pad_down(int pad, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
+  if (sending_gesture(model)) {  // hold show + pad: send that pad's track (§11), no sound and no mute
+    pads_[pad] = Press{true, at_us, true, false};  // used, so the release does nothing
+    model.jam_request = JamRequest{true, true, pad};
+    return;
+  }
   pads_[pad] = Press{true, at_us, false, false};
   // A pad is not an instrument in the song view or in settings: there it picks a song
   // (§9.6) or does nothing at all (D-096), so it neither sounds nor mutes its track —
@@ -300,6 +317,10 @@ void Controller::button_press(hal::Button button, uint64_t at_us, Model& model, 
       say(model, at_us, kStatusUs, "undo");
       return;
     case hal::Button::dice: {
+      if (sending_gesture(model)) {  // hold show + dice: send the whole loop (§11)
+        model.jam_request = JamRequest{true, false, 0};
+        return;
+      }
       if (model.view == View::song) {
         say(model, at_us, kStatusUs, "hold dice to clear");
         return;
@@ -530,6 +551,14 @@ void Controller::tap_tempo(uint64_t at_us, Model& model, AudioPath& audio) {
   say(model, at_us, kStatusUs, "%d bpm", bpm);
 }
 
+void Controller::adopt_bpm(int bpm, uint64_t at_us, Model& model, AudioPath& audio) {
+  int targets[2];
+  const int count = edited_sections(model, targets);
+  for (int i = 0; i < count; ++i) model.sections[targets[i]].state().bpm = static_cast<uint8_t>(bpm);
+  publish_params(model, audio);
+  say(model, at_us, kStatusUs, "ext off, %d bpm", bpm);
+}
+
 // Stop leaves nothing pending: no song, no switch, no roll (T-81).
 void Controller::stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio) {
   model.transport = false;
@@ -673,6 +702,10 @@ void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, 
   engine::State& state = section.state();
   switch (encoder) {
     case hal::Encoder::speed: {
+      if (following_) {  // a MIDI or sync clock owns the tempo; the knob says so (§11, C-09)
+        show_knob(model, at_us, "ext");
+        return;
+      }
       int bpm = static_cast<int>(state.bpm) + detents * kBpmPerDetent;
       if (bpm < sound::kMinBpm) bpm = sound::kMinBpm;
       if (bpm > sound::kMaxBpm) bpm = sound::kMaxBpm;

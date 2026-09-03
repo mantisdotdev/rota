@@ -39,6 +39,76 @@ struct InputEvent {
   uint64_t time_us;  // now_us() when the platform saw it, for latency measurement
 };
 
+// The clock ports (§7.6, §11): one MIDI wire at 31250 baud and one Pocket Operator
+// sync jack, both open all the time. Which of them the device listens to or talks
+// on is a settings row (§9.4), not something the HAL decides.
+enum class ClockPort : uint8_t { midi, sync };
+constexpr int kClockPortCount = 2;
+constexpr uint32_t kMidiBaud = 31250;   // §7.6 MIDI
+constexpr uint32_t kMidiByteUs = 320;   // ten bits a byte at kMidiBaud: 3125 bytes a second and no more
+
+// One pulse of somebody's clock. `tick` is a MIDI clock byte or one edge on the
+// sync jack; the other three are MIDI's transport messages, which the sync wire has
+// no room for and never carries.
+enum class ClockPulse : uint8_t { tick, start, resume, stop };
+
+// A pulse a port saw, stamped by the platform where it arrived and not where it is
+// read: a clock's whole value is when it came, and the main loop's gap is
+// milliseconds, so reading late must cost how soon an estimate moves and never how
+// right it is. InputEvent carries a time for the same reason (D-088). MIDI's four
+// System Real Time bytes are lifted out of the byte stream by the platform, because
+// one of them may sit between any two bytes of any other message, a SysEx included,
+// and only the code holding the UART can stamp it where it lands; every other byte
+// stays below for io/ to parse (D-114).
+struct ClockIn {
+  ClockPort port;
+  ClockPulse pulse;
+  uint64_t time_us;
+};
+
+// Each port has its own ring this deep, so a shorted sync jack cannot crowd out the
+// MIDI clock it is meant to lose to. A full ring drops the newest pulse: a ring that
+// fills means nothing is draining it, and then a gap is honest where a stale stamp
+// would not be.
+constexpr int kClockInCapacity = 64;
+
+// Moves the pulses seen since the last call into `out`, oldest first, the two ports
+// interleaved by time. Returns how many. From the main loop, beside read_input.
+int read_clock_in(ClockIn* out, int capacity);
+
+// Sends one pulse on `port` at `at_us`, from the platform's own one-shot rather than
+// in the caller's context. The beat is decided in a 2 ms timer and 2 ms is most of
+// the 3 ms §11 allows between two linked devices, so what is handed over is the
+// deadline and not the byte. A deadline already past is sent at once — which is all
+// a platform without a one-shot ever does — and "already past" is a signed
+// comparison, because these are microseconds since init and the difference wraps the
+// other way otherwise. False when the port still has a pulse armed, and the caller
+// offers that one again on its next tick. From the timer callback; never from the
+// audio callback.
+bool send_clock_out(ClockPort port, ClockPulse pulse, uint64_t at_us);
+
+// The MIDI wire itself, minus the real-time bytes read_clock_in already took: the
+// jam link's SysEx (§11) and nothing else this firmware knows. midi_read moves what
+// arrived since the last call into `out`, oldest first. midi_send takes at most one
+// byte and refuses until that byte has left the platform, so a pulse armed by
+// send_clock_out waits behind at most one byte time; io/ then offers a payload byte
+// every other byte time, which leaves the wire half empty and the worst wait for a
+// clock byte at 320 µs. Neither call blocks, waits or spins whatever the platform's
+// own driver would do, since a spin under lock() is a hang with interrupts off
+// rather than a delay.
+constexpr int kMidiInputCapacity = 640;  // a 512-character message and a quarter second of wire behind it
+int midi_read(uint8_t* out, int capacity);
+int midi_send(const uint8_t* bytes, int count);
+
+// Whether this build has a MIDI port at all: the device has one, the simulator only
+// when it was started as one end of a link, the fake when a test gives it one. Said
+// in a result rather than left to a send that takes nothing, which is what a busy
+// wire looks like too; app/ then leaves the clock and the jam gestures quiet and says
+// so, as a board with no PSRAM leaves the sample pads silent (T-100). A cable is a
+// different question: no MIDI or sync jack can detect one, so an unplugged link is
+// silence, which app/ reads as a clock that stopped (T-20).
+bool midi_port_open();
+
 // Fills one block of planar float audio, exactly kAudioBlockFrames per channel.
 // Runs on the platform's audio thread or interrupt: no allocation, no locks, no
 // logging inside it (§12 rule 4).

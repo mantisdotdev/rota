@@ -33,6 +33,41 @@ uint32_t timer_period_us();
 // A board with no PSRAM fitted, which is every board until bring-up (T-100).
 void refuse_sample_memory(bool refuse);
 
+// The clock ports and the MIDI wire (§7.6, §11). A test scripts what arrives and
+// reads back what left, so a follower's arithmetic is checked against a partner it
+// writes itself rather than against a second device.
+//
+// A pulse is pushed with the time it arrived, since that stamp is the whole of what
+// a clock says; the fake takes it as given and does not stamp it with its own clock,
+// so a test can place a pulse anywhere against the audio it renders.
+void push_clock_in(hal::ClockPort port, hal::ClockPulse pulse, uint64_t time_us);
+void push_midi(const uint8_t* bytes, int count);
+
+// A wire at all. Off to begin with, as both platforms are until their link files
+// land, so a case that says nothing about the ports behaves exactly as it did before
+// there were any.
+void set_midi_port_open(bool open);
+
+// A port that still has a pulse armed, so every send_clock_out is refused: the path
+// where the app has to offer the same pulse again (T-103).
+void refuse_clock_out(bool refuse);
+
+// A wire that will not take a byte, for the path where a send has to be offered
+// again: every midi_send takes nothing while this is on.
+void choke_midi(bool choke);
+
+// One pulse the app armed, in the order the ports were asked.
+struct ClockOut {
+  hal::ClockPort port;
+  hal::ClockPulse pulse;
+  uint64_t at_us;
+};
+const std::vector<ClockOut>& clock_out();
+
+// Every byte the app put on the wire, in order, the pulses excluded: those carry a
+// deadline rather than a byte and are in clock_out().
+const std::vector<uint8_t>& midi_sent();
+
 // Every hal::write_file the card was asked for, refused ones included (T-99); with
 // a path, only the ones for that file.
 int writes();

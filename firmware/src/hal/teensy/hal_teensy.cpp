@@ -44,6 +44,7 @@ void init() {
   teensy::power_init();
   teensy::input_init();
   teensy::display_init();
+  teensy::link_init();
 }
 
 uint64_t now_us() {
@@ -58,6 +59,7 @@ bool poll() {
   clock_base_.micros = now;
   interrupts();
   teensy::input_read();
+  teensy::link_poll();
   return true;
 }
 
@@ -73,6 +75,7 @@ void start_timer(uint32_t period_us, TimerCallback callback) {
 // interrupt the pair is a no-op with a harmless re-enable at the end.
 void lock() { noInterrupts(); }
 void unlock() { interrupts(); }
+
 
 void log(const char* line) {
   if (Serial) Serial.println(line);
