@@ -444,3 +444,46 @@ TEST_CASE("T-99 A boot on a card with no song writes nothing until the player pl
   w.run_for(kSecond + kSecond / 10);
   CHECK(hal_fake::writes("songs/1.txt") == 1);
 }
+
+TEST_CASE("T-56 A pad in the song view or in settings neither sounds nor mutes its track") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.tap(Pad::hat, 2);  // four hats, at the quarters
+  w.play();
+  w.run_until(w.cycle_start(1));
+  w.press(Button::show);
+  w.press(Button::show);
+  REQUIRE(w.model().view == app::View::song);
+
+  const size_t sounded = w.audition_samples(Pad::hat).size();
+  w.pad_down(Pad::hat);  // pad 3: a pick, not a hit
+  for (int i = 0; i < engine::kSectionCount; ++i) {
+    CAPTURE(i);
+    CHECK_FALSE(w.state(i).tracks[engine::index_of(Pad::hat)].mute);
+  }
+  w.run_for(kCycleFrames);
+  w.pad_up(Pad::hat);
+  CHECK(w.audition_samples(Pad::hat).size() == sounded);      // the press made no sound of its own
+  CHECK(w.times_in_cycle(Pad::hat, 1) == "0 1/4 1/2 3/4");    // and took no hit out of the pattern
+
+  w.press(Button::show);  // the ring, where a pad is an instrument again
+  w.pad_down(Pad::hat);
+  CHECK(w.state(0).tracks[engine::index_of(Pad::hat)].mute);
+  w.run_for(kSecond / 10);  // the audition is heard when the audio path renders it
+  CHECK(w.audition_samples(Pad::hat).size() == sounded + 1);
+  w.pad_up(Pad::hat);
+
+  w.button_down(Button::undo);  // and settings, where it is not (D-096)
+  w.run_for(kSecond / 10);
+  w.button_down(Button::show);
+  w.run_for(kSecond / 2);
+  w.button_up(Button::show);
+  w.button_up(Button::undo);
+  REQUIRE(w.model().view == app::View::settings);
+  const size_t before = w.audition_samples(Pad::hat).size();
+  w.pad_down(Pad::hat);
+  CHECK_FALSE(w.state(0).tracks[engine::index_of(Pad::hat)].mute);
+  w.run_for(kSecond / 10);
+  CHECK(w.audition_samples(Pad::hat).size() == before);
+  w.pad_up(Pad::hat);
+}

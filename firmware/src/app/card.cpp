@@ -41,6 +41,8 @@ uint64_t song_changed_us = 0;
 uint64_t settings_changed_us = 0;
 bool erase_tried = false;
 uint64_t erase_at_us = 0;
+bool flag_tried = false;
+uint64_t flag_at_us = 0;
 
 int slot_index(int slot) { return slot - io::kFirstSlot; }
 
@@ -69,6 +71,31 @@ void refuse_pick(Model& model, uint64_t now_us, int picked, const char* text) {
 }
 
 Slot state_of(const engine::Song& song) { return is_empty(song) ? Slot::empty : Slot::filled; }
+
+// What the card should hold for the tutorial as it stands (§8.5, D-097). Read under the lock.
+uint8_t tutorial_byte(const Model& model) { return model.tutorial.active ? kTutorialPending : kTutorialRan; }
+
+// The tutorial's done flag: written the moment the tutorial ends or is skipped, since
+// a power cut a second later must not bring it back, and tried again a second later
+// when the card refuses rather than on every frame. The flag stays pending until the
+// card takes it, so a skip that could not be recorded is not lost (T-94, D-097).
+void keep_tutorial_flag(uint64_t now_us, Model& model) {
+  hal::lock();
+  const bool pending = model.tutorial.save_pending;
+  const uint8_t flag = tutorial_byte(model);
+  hal::unlock();
+  if (!pending) {
+    flag_tried = false;
+    return;
+  }
+  if (flag_tried && now_us - flag_at_us < kQuietUs) return;
+  flag_tried = true;
+  flag_at_us = now_us;
+  if (!hal::write_file(kTutorialDoneFile, &flag, 1)) return;
+  hal::lock();
+  if (tutorial_byte(model) == flag) model.tutorial.save_pending = false;  // and not one changed since
+  hal::unlock();
+}
 
 // A pick from the song view (§9.6, T-56): what is on screen goes back to its own
 // slot, and the slot picked either comes back from the card or, being empty, becomes
@@ -192,9 +219,12 @@ void apply_card(Model& model) {
   agree(staged, model.settings);
   active_invalid = boot_active_invalid;
   erase_tried = false;
+  flag_tried = false;
 }
 
 void keep_card(uint64_t now_us, Model& model, const engine::Kit& kit) {
+  keep_tutorial_flag(now_us, model);  // one byte, and its own business: no song work waits on it
+
   io::Settings settings;
   int picked;
   bool erase;

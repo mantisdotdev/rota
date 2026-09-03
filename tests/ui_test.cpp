@@ -536,7 +536,7 @@ TEST_CASE("T-88 The share view: the QR at 3 px per module, the code round it, ba
   w.frame();
   const uint16_t* fb = screen();
   const Grid grid = grid_from_screen(fb);
-  CHECK(grid.size == 37);  // version 5: 83 bytes of URL
+  CHECK(grid.size == 37);  // version 5: 90 bytes of URL, the code with its id (D-105)
   const int side = (grid.size + 2 * ui::kQrQuietModules) * ui::kQrModulePx;
   CHECK(ui::kShareTop == ui::kContentTop);                                         // below the top row
   CHECK(fb[ui::kShareTop * ui::kWidth + ui::kShareLeft] == kText);                  // the quiet zone is light
@@ -778,7 +778,7 @@ TEST_CASE("T-22 First-boot tutorial: the prompts in order, done within 45 s when
   CHECK_FALSE(has_text(fb, "hold A and press play"));
   uint8_t flag = 0;
   uint32_t size = 0;
-  CHECK(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));
+  CHECK(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok);
   CHECK(flag == '1');
 }
 
@@ -815,7 +815,7 @@ TEST_CASE("T-93 A gesture in settings, where the prompt is hidden, advances no t
   CHECK(has_text(screen(), "tap the snare"));        // still the step the player last saw
 }
 
-TEST_CASE("T-94 A tutorial flag the card refuses is written again on a later tick") {
+TEST_CASE("T-94 A tutorial flag the card refuses is written again a second later") {
   World w(true);
   hal_fake::refuse_writes(true);
   w.press(Button::play);  // skips the tutorial, which must be recorded
@@ -823,13 +823,19 @@ TEST_CASE("T-94 A tutorial flag the card refuses is written again on a later tic
   w.frame();
   uint8_t flag = 0;
   uint32_t size = 0;
-  CHECK_FALSE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));  // nothing on the card
-  CHECK(w.model().tutorial.save_pending);                                 // and the app knows it
+  const int tried = hal_fake::writes(app::kTutorialDoneFile);
+  CHECK(tried == 1);  // written at once: a power cut a second from now must not bring the tutorial back
+  CHECK(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::missing);
+  CHECK(w.model().tutorial.save_pending);  // and the app knows the card refused it
 
   hal_fake::refuse_writes(false);
   w.frame();
+  CHECK(hal_fake::writes(app::kTutorialDoneFile) == tried);  // the retry waits its second, not a frame
+  CHECK(w.model().tutorial.save_pending);
+
+  w.run_for(kSecond + kSecond / 10);
   CHECK_FALSE(w.model().tutorial.save_pending);
-  REQUIRE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));
+  REQUIRE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok);
   CHECK(flag == app::kTutorialRan);  // the next boot will not run it again
 }
 
