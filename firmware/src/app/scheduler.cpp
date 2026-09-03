@@ -42,6 +42,7 @@ void Scheduler::set_seed(uint32_t seed) { seed_ = seed; }
 
 void Scheduler::start(Model& model, AudioPath& audio) {
   running_ = true;
+  clock_->start_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
   const int64_t at = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
@@ -51,6 +52,7 @@ void Scheduler::start(Model& model, AudioPath& audio) {
 
 void Scheduler::stop(AudioPath& audio) {
   running_ = false;
+  clock_->stop_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
 }
@@ -65,9 +67,10 @@ void Scheduler::tick(Model& model, AudioPath& audio) {
       continue;
     }
     const int64_t until = beat_end < horizon ? beat_end : horizon;
-    if (!push_window(model, until, audio.scheduled)) return;  // the queue is full: the rest waits for the next tick
+    if (!push_window(model, until, audio.scheduled)) break;  // the queue is full: the rest waits for the next tick
     scheduled_until_ = until;
   }
+  clock_->emit_until(horizon, audio);
 }
 
 // A beat boundary: where an edit lands (§6.7). The playing section's live state
@@ -93,7 +96,7 @@ void Scheduler::begin_beat(Model& model, int64_t at, bool first, AudioPath& audi
   if (beat_in_cycle_ == 0) cross_cycle(model, first);
   const engine::State& live = model.sections[model.playing].state();
   playing_ = without_mutes(live);
-  beat_frames_ = clock_->beat_frames(playing_.bpm);
+  beat_frames_ = clock_->begin_beat(beat_start_, playing_.bpm);
   engine::events(playing_, *kit_, cycle_index_, seed_, list_);
   next_event_ = 0;
   while (next_event_ < list_.count && before(list_.items[next_event_].time, beat_in_cycle_)) ++next_event_;

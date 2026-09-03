@@ -368,6 +368,7 @@ void tick() {
   hal::lock();
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   controller.tick(now_us, the_model, scheduler, audio);
+  the_clock.set_ports(the_model.settings.midi_clock_out, the_model.settings.sync_out);
   hal::unlock();
 
   Fired fired;
