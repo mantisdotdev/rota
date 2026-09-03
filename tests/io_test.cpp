@@ -24,7 +24,7 @@ Button section_button(char letter) {
 std::string file(const char* path) {
   uint8_t buffer[4096];
   uint32_t size = 0;
-  if (!hal::read_file(path, buffer, sizeof buffer, &size)) return "";
+  if (hal::read_file(path, buffer, sizeof buffer, &size) != hal::FileRead::ok) return "";
   return std::string(reinterpret_cast<const char*>(buffer), size);
 }
 

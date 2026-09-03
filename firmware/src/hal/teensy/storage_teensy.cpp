@@ -38,22 +38,21 @@ void storage_init() {
 
 namespace hal {
 
-bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   *size = 0;
-  if (!card_ready_) return false;
+  if (!card_ready_) return FileRead::missing;
   File file = SD.open(path, FILE_READ);
-  if (!file) return false;
-  const uint64_t length = file.size();
-  *size = static_cast<uint32_t>(length);  // the caller tells an absent file from one too big by this
+  if (!file) return FileRead::missing;
+  const uint64_t length = file.size();  // compared before any narrowing: a size is never a verdict
   if (length > capacity) {
     file.close();
-    return false;
+    return FileRead::unusable;
   }
   const int read = file.read(out, static_cast<size_t>(length));
   file.close();
-  if (read < 0 || static_cast<uint64_t>(read) != length) return false;
+  if (read < 0 || static_cast<uint64_t>(read) != length) return FileRead::unusable;
   *size = static_cast<uint32_t>(length);
-  return true;
+  return FileRead::ok;
 }
 
 bool write_file(const char* path, const uint8_t* data, uint32_t size) {

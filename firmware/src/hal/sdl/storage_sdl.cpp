@@ -14,21 +14,23 @@ std::string full_path(const char* path) { return std::string(ROTA_STORAGE_DIR) +
 
 namespace hal {
 
-bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   *size = 0;
-  std::error_code ignored;
-  const std::uintmax_t on_disk = std::filesystem::file_size(full_path(path), ignored);
-  if (ignored) return false;  // no file, or nothing that has a size
-  *size = static_cast<uint32_t>(on_disk);
-  if (on_disk > capacity) return false;
-  std::FILE* file = std::fopen(full_path(path).c_str(), "rb");
-  if (file == nullptr) return false;
+  const std::filesystem::path target = full_path(path);
+  std::error_code error;
+  const std::uintmax_t on_disk = std::filesystem::file_size(target, error);
+  // A file that cannot even be sized is still a file: only a path with nothing at it
+  // is missing, or a pick would copy over what it could not read (T-97).
+  if (error) return std::filesystem::exists(target, error) ? FileRead::unusable : FileRead::missing;
+  if (on_disk > capacity) return FileRead::unusable;
+  std::FILE* file = std::fopen(target.c_str(), "rb");
+  if (file == nullptr) return FileRead::unusable;
   const size_t read = std::fread(out, 1, capacity, file);
   const bool failed = std::ferror(file) != 0;
   std::fclose(file);
-  if (failed || read != on_disk) return false;
+  if (failed || read != on_disk) return FileRead::unusable;
   *size = static_cast<uint32_t>(read);
-  return true;
+  return FileRead::ok;
 }
 
 bool write_file(const char* path, const uint8_t* data, uint32_t size) {

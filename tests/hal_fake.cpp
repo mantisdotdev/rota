@@ -103,15 +103,14 @@ void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue) {
 void show_leds() {}
 void set_brightness(int percent) { brightness_ = percent; }
 
-bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   *size = 0;
   const auto found = files_.find(path);
-  if (found == files_.end()) return false;
-  *size = static_cast<uint32_t>(found->second.size());
-  if (found->second.size() > capacity) return false;
+  if (found == files_.end()) return FileRead::missing;
+  if (found->second.size() > capacity) return FileRead::unusable;
   std::memcpy(out, found->second.data(), found->second.size());
   *size = static_cast<uint32_t>(found->second.size());
-  return true;
+  return FileRead::ok;
 }
 
 bool write_file(const char* path, const uint8_t* data, uint32_t size) {

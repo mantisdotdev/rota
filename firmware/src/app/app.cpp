@@ -317,7 +317,7 @@ uint8_t tutorial_byte(const Model& model) { return model.tutorial.active ? kTuto
 bool tutorial_done() {
   uint8_t flag = 0;
   uint32_t size = 0;
-  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) && size == 1 && flag == kTutorialRan;
+  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok && size == 1 && flag == kTutorialRan;
 }
 
 }  // namespace
