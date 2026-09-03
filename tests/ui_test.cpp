@@ -790,7 +790,7 @@ TEST_CASE("T-22 Play skips the tutorial, the next boot does not run it, and step
   CHECK_FALSE(app::model().tutorial.active);
 }
 
-TEST_CASE("T-22 A gesture in settings, where the prompt is hidden, advances no tutorial step") {
+TEST_CASE("T-93 A gesture in settings, where the prompt is hidden, advances no tutorial step") {
   World w(true);
   w.tap(Pad::kick, 2);
   REQUIRE(w.model().tutorial.step == 2);  // waiting for the snare
@@ -804,6 +804,24 @@ TEST_CASE("T-22 A gesture in settings, where the prompt is hidden, advances no t
   w.press(Button::show);
   w.frame();
   CHECK(has_text(screen(), "tap the snare"));        // still the step the player last saw
+}
+
+TEST_CASE("T-94 A tutorial flag the card refuses is written again on a later tick") {
+  World w(true);
+  hal_fake::refuse_writes(true);
+  w.press(Button::play);  // skips the tutorial, which must be recorded
+  CHECK_FALSE(w.model().tutorial.active);
+  w.frame();
+  uint8_t flag = 0;
+  uint32_t size = 0;
+  CHECK_FALSE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));  // nothing on the card
+  CHECK(w.model().tutorial.save_pending);                                 // and the app knows it
+
+  hal_fake::refuse_writes(false);
+  w.frame();
+  CHECK_FALSE(w.model().tutorial.save_pending);
+  REQUIRE(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size));
+  CHECK(flag == app::kTutorialRan);  // the next boot will not run it again
 }
 
 TEST_CASE("T-90 Pad LEDs: dim with no steps, the track colour with steps, full for 100 ms after a hit") {

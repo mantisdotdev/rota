@@ -15,6 +15,7 @@ std::vector<std::string> log_;
 hal_fake::Led leds_[hal::kPadCount];
 hal_fake::Led button_leds_[hal::kButtonCount];
 int brightness_ = 100;
+bool refuse_writes_ = false;
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
 int presented_ = 0;
 std::map<std::string, std::vector<uint8_t>> files_;
@@ -33,12 +34,14 @@ void reset() {
   std::memset(leds_, 0, sizeof leds_);
   std::memset(button_leds_, 0, sizeof button_leds_);
   brightness_ = 100;
+  refuse_writes_ = false;
   std::memset(framebuffer_, 0, sizeof framebuffer_);
   presented_ = 0;
   files_.clear();
 }
 
 void set_time_us(uint64_t now_us) { now_us_ = now_us; }
+void refuse_writes(bool refuse) { refuse_writes_ = refuse; }
 void push(const hal::InputEvent& event) { input_.push_back(event); }
 hal::AudioCallback audio_callback() { return audio_callback_; }
 hal::TimerCallback timer_callback() { return timer_callback_; }
@@ -100,6 +103,7 @@ bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size
 }
 
 bool write_file(const char* path, const uint8_t* data, uint32_t size) {
+  if (refuse_writes_) return false;
   files_[path] = std::vector<uint8_t>(data, data + size);
   return true;
 }

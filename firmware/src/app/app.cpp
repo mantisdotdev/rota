@@ -297,6 +297,9 @@ void light_leds(int64_t position, const engine::State& state) {
   hal::show_leds();
 }
 
+// What the card should hold for the tutorial as it stands. Read under the lock.
+uint8_t tutorial_byte(const Model& model) { return model.tutorial.active ? kTutorialPending : kTutorialRan; }
+
 // First boot, or not: one byte on the card (D-097). Read before the lock, since
 // the card is slow and the timer may already tick.
 bool tutorial_done() {
@@ -348,12 +351,18 @@ void tick() {
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   controller.tick(now_us, the_model, scheduler, audio);
   if (the_model.tutorial.save_pending) {  // written below, outside the lock: the card is slow
-    the_model.tutorial.save_pending = false;
     save_tutorial = true;
-    tutorial_flag = the_model.tutorial.active ? kTutorialPending : kTutorialRan;
+    tutorial_flag = tutorial_byte(the_model);
   }
   hal::unlock();
-  if (save_tutorial) hal::write_file(kTutorialDoneFile, &tutorial_flag, 1);
+  // The flag stays pending until the card takes it, so a refused write is retried
+  // on the next tick rather than lost; a reset that could not be recorded must not
+  // come back as a device that has already run its tutorial (D-097).
+  if (save_tutorial && hal::write_file(kTutorialDoneFile, &tutorial_flag, 1)) {
+    hal::lock();
+    if (tutorial_byte(the_model) == tutorial_flag) the_model.tutorial.save_pending = false;
+    hal::unlock();
+  }
 
   Fired fired;
   while (audio.fired.pop(fired)) the_fired_log.append(fired);

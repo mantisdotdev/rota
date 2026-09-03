@@ -21,6 +21,9 @@ struct Led {
 void reset();
 
 void set_time_us(uint64_t now_us);
+
+// Makes every hal::write_file fail, for the paths that must survive a full card.
+void refuse_writes(bool refuse);
 void push(const hal::InputEvent& event);
 
 hal::AudioCallback audio_callback();
