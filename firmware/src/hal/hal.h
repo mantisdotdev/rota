@@ -87,8 +87,10 @@ void show_leds();
 void set_brightness(int percent);
 
 // Whole files on the device's storage, by a path relative to its root. read_file
-// stores at most `capacity` bytes and the file's size; false when the file is
-// missing or larger than the buffer.
+// stores at most `capacity` bytes and returns false when the file is missing, larger
+// than the buffer, or unreadable. `*size` is the file's size whenever the file
+// exists, false included, and 0 when it does not: a card is a boundary, and io/ has
+// to tell an absent file from one it cannot use (D-104).
 bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size);
 bool write_file(const char* path, const uint8_t* data, uint32_t size);
 

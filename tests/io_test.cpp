@@ -104,6 +104,12 @@ TEST_CASE("T-97 A song file keeps the four sections, their lineage and the arran
   CHECK(io::load_song(5, kit(), back) == io::LoadResult::invalid);
   CHECK(io::load_song(6, kit(), back) == io::LoadResult::missing);  // no file: an empty slot a pick may copy over
 
+  // A file that is there but cannot be one of ours is taken, not absent.
+  put("songs/7.txt", "");
+  CHECK(io::load_song(7, kit(), back) == io::LoadResult::invalid);
+  put("songs/8.txt", std::string(8192, 'x'));
+  CHECK(io::load_song(8, kit(), back) == io::LoadResult::invalid);
+
   hal_fake::refuse_writes(true);
   CHECK_FALSE(io::save_song(6, kit(), song));
   CHECK(file("songs/6.txt").empty());
@@ -353,4 +359,51 @@ TEST_CASE("T-89 A factory reset the card refuses stays pending, and finishes whe
   w.reboot();
   CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::kick)));
   for (const bool filled : w.model().song_filled) CHECK_FALSE(filled);
+}
+
+TEST_CASE("T-97 A file that will not parse is never written over until the player means to") {
+  const std::string junk = "not a code\n";
+  World w;
+  w.press(Button::show);
+  w.press(Button::show);
+  w.tap(Pad::snare);  // pad 2, so the settings name it at the next boot
+  w.frame();
+  REQUIRE(w.model().settings.song == 2);
+  put("songs/2.txt", junk);  // and something wrote nonsense over its file
+
+  w.reboot();
+  REQUIRE(w.model().settings.song == 2);
+  CHECK(w.model().song_filled[1]);  // taken, though nothing could be read from it
+  w.run_for(2 * kSecond);
+  CHECK(file("songs/2.txt") == junk);  // an idle device writes nothing over it
+
+  w.tap(Pad::kick);  // the player playing on it is what replaces it
+  w.run_for(kSecond + kSecond / 10);
+  CHECK(lines_of(file("songs/2.txt")).size() == 5);
+
+  put("songs/2.txt", junk);  // again, and this time the player leaves the slot
+  w.reboot();
+  w.press(Button::show);
+  w.press(Button::show);
+  w.tap(Pad::hat);  // pad 3
+  w.frame();
+  CHECK(w.model().settings.song == 3);
+  CHECK(file("songs/2.txt") == junk);  // leaving it does not write the power-on song over it
+  CHECK(w.model().song_filled[1]);
+
+  w.tap(Pad::snare);  // and it cannot be opened again while it is what it is
+  w.frame();
+  CHECK(w.status() == "song 2 did not load");
+  CHECK(w.model().settings.song == 3);
+  CHECK(file("songs/2.txt") == junk);
+}
+
+TEST_CASE("T-99 A boot on a card with no song writes nothing until the player plays something") {
+  World w;
+  w.run_for(3 * kSecond);
+  CHECK(hal_fake::writes("songs/1.txt") == 0);   // an empty song is what an absent file already says
+  CHECK(hal_fake::writes("settings.txt") == 0);
+  w.tap(Pad::kick);
+  w.run_for(kSecond + kSecond / 10);
+  CHECK(hal_fake::writes("songs/1.txt") == 1);
 }

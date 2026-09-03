@@ -15,13 +15,18 @@ std::string full_path(const char* path) { return std::string(ROTA_STORAGE_DIR) +
 namespace hal {
 
 bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+  *size = 0;
+  std::error_code ignored;
+  const std::uintmax_t on_disk = std::filesystem::file_size(full_path(path), ignored);
+  if (ignored) return false;  // no file, or nothing that has a size
+  *size = static_cast<uint32_t>(on_disk);
+  if (on_disk > capacity) return false;
   std::FILE* file = std::fopen(full_path(path).c_str(), "rb");
   if (file == nullptr) return false;
   const size_t read = std::fread(out, 1, capacity, file);
-  const bool more = std::fgetc(file) != EOF;  // larger than the buffer
-  const bool failed = std::ferror(file) != 0;  // a read error, not the end
+  const bool failed = std::ferror(file) != 0;
   std::fclose(file);
-  if (more || failed) return false;
+  if (failed || read != on_disk) return false;
   *size = static_cast<uint32_t>(read);
   return true;
 }

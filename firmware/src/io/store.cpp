@@ -44,13 +44,20 @@ void refuse(const char* path, const char* why) {
   hal::log(line);
 }
 
-// Reads a whole file into file_ and terminates it. False when it is missing, empty
-// or bigger than the buffer, which for a file this firmware wrote cannot happen.
-bool read_file(const char* path, uint32_t capacity) {
+// What came back from the card. `unusable` is a file that is there but is not one
+// this firmware could have written — empty, too big for the buffer, or unreadable —
+// and it must not be mistaken for an absent one, which a pick may copy over (T-97).
+enum class Read : uint8_t { missing, unusable, ok };
+
+// Reads a whole file into file_ and terminates it.
+Read read_file(const char* path, uint32_t capacity) {
   uint32_t size = 0;
-  if (!hal::read_file(path, reinterpret_cast<uint8_t*>(file_), capacity - 1, &size)) return false;
+  if (!hal::read_file(path, reinterpret_cast<uint8_t*>(file_), capacity - 1, &size)) {
+    return size == 0 ? Read::missing : Read::unusable;
+  }
+  if (size == 0) return Read::unusable;
   file_[size] = '\0';
-  return size > 0;
+  return Read::ok;
 }
 
 // Splits file_ into NUL-terminated lines in place. Returns how many, or -1 when
@@ -153,7 +160,15 @@ bool operator==(const Settings& a, const Settings& b) {
 LoadResult load_song(int slot, const engine::Kit& kit, engine::Song& song) {
   char path[kPathCapacity];
   song_path(slot, path);
-  if (!read_file(path, kSongFileCapacity)) return LoadResult::missing;
+  switch (read_file(path, kSongFileCapacity)) {
+    case Read::missing:
+      return LoadResult::missing;
+    case Read::unusable:
+      refuse(path, "is empty or too big to be a song");
+      return LoadResult::invalid;
+    case Read::ok:
+      break;
+  }
   char* lines[kSongLines];
   if (split_lines(lines, kSongLines) != kSongLines) {
     refuse(path, "is not four sections and an arrangement");
@@ -194,7 +209,7 @@ bool save_song(int slot, const engine::Kit& kit, const engine::Song& song) {
 
 bool load_settings(Settings& settings) {
   settings = kDefaultSettings;
-  if (!read_file("settings.txt", kSettingsFileCapacity)) return false;
+  if (read_file("settings.txt", kSettingsFileCapacity) != Read::ok) return false;
   char* lines[kSettingsFileCapacity / 4];
   const int count = split_lines(lines, static_cast<int>(kSettingsFileCapacity / 4));
   if (count < 0) return false;

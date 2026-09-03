@@ -25,7 +25,11 @@ engine::Song loaded;  // the slot a pick asked for, or the boot song
 io::Settings saved_settings = io::kDefaultSettings;
 io::Settings boot_settings = io::kDefaultSettings;
 bool boot_filled[engine::kSongSlotCount];
-bool boot_song_on_card = false;  // the slot the settings name has a file, read or not
+// The open slot holds a file nothing could be read from, and the player has not
+// changed anything since. Writing the power-on song over it would destroy it for
+// nothing, so it is left alone until an edit means to replace it (T-97).
+bool boot_active_invalid = false;
+bool active_invalid = false;
 // False while the card is not known to hold `saved` or `saved_settings` — before the
 // first write, and after one it refused. A refused write must not look like a card
 // that agrees, or the song it lost would never be written again.
@@ -66,8 +70,9 @@ void refuse_pick(Model& model, uint64_t now_us, int picked, const char* text) {
 // a copy of what is on screen — which is a save, not a change of what is playing.
 void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit) {
   const int from = model.settings.song;
+  const bool leave_alone = active_invalid && staged == saved;  // nothing of the player's to write over it
   char refusal[kStatusFormatCapacity];
-  if (!io::save_song(from, kit, staged)) {
+  if (!leave_alone && !io::save_song(from, kit, staged)) {
     card_holds_song = false;  // the edit stays in hand and is written as soon as a card takes it
     std::snprintf(refusal, sizeof refusal, "song %d did not save", from);
     refuse_pick(model, now_us, slot, refusal);
@@ -86,7 +91,7 @@ void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit
   hal::lock();
   if (has_song) set_song(model, loaded);
   model.settings.song = slot;
-  model.song_filled[slot_index(from)] = !is_empty(staged);
+  model.song_filled[slot_index(from)] = leave_alone || !is_empty(staged);  // its file is still there
   model.song_filled[slot_index(slot)] = has_song || !is_empty(staged);
   if (model.picked_song == slot) model.picked_song = io::kNoSlot;  // a newer pick is not this one
   settings = model.settings;
@@ -100,6 +105,7 @@ void switch_song(int slot, uint64_t now_us, Model& model, const engine::Kit& kit
   settings_dirty = !card_holds_settings;
   song_changed_us = now_us;
   settings_changed_us = now_us;
+  active_invalid = false;  // whatever the new slot is, it is not a file that would not parse
 }
 
 // A factory reset (§9.4): every slot back to an empty song, so what the song view's
@@ -153,7 +159,7 @@ void read_card(const engine::Kit& kit) {
     boot_filled[slot_index(slot)] =
         result == io::LoadResult::invalid || (result == io::LoadResult::loaded && !is_empty(into));
   }
-  boot_song_on_card = current != io::LoadResult::missing;
+  boot_active_invalid = current == io::LoadResult::invalid;
   if (current != io::LoadResult::loaded) {  // no file, or one nothing could be read from: the power-on song
     for (engine::State& section : loaded.sections) section = engine::make_state(kit);
     loaded.arrangement_length = 0;
@@ -166,10 +172,10 @@ void apply_card(Model& model) {
   for (int i = 0; i < engine::kSongSlotCount; ++i) model.song_filled[i] = boot_filled[i];
   set_song(model, loaded);
   song_of(model, staged);
+  // An absent file and an empty song are the same thing, so a boot writes nothing:
+  // the first thing the player plays is what makes a file.
   agree(staged, model.settings);
-  // A slot with no file yet is written by the first thing the player plays. A file
-  // that did not parse is left alone until then, and overwritten when it comes.
-  card_holds_song = boot_song_on_card;
+  active_invalid = boot_active_invalid;
   erase_tried = false;
 }
 
@@ -197,6 +203,7 @@ void keep_card(uint64_t now_us, Model& model, const engine::Kit& kit) {
     saved = staged;
     card_holds_song = true;
     song_dirty = false;
+    active_invalid = false;  // the file that would not parse has been replaced by the player's own
   }
   if (due(!card_holds_settings || settings != saved_settings, now_us, settings_dirty, settings_changed_us) &&
       io::save_settings(settings)) {

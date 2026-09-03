@@ -104,8 +104,11 @@ void show_leds() {}
 void set_brightness(int percent) { brightness_ = percent; }
 
 bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+  *size = 0;
   const auto found = files_.find(path);
-  if (found == files_.end() || found->second.size() > capacity) return false;
+  if (found == files_.end()) return false;
+  *size = static_cast<uint32_t>(found->second.size());
+  if (found->second.size() > capacity) return false;
   std::memcpy(out, found->second.data(), found->second.size());
   *size = static_cast<uint32_t>(found->second.size());
   return true;

@@ -39,10 +39,12 @@ void storage_init() {
 namespace hal {
 
 bool read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
+  *size = 0;
   if (!card_ready_) return false;
   File file = SD.open(path, FILE_READ);
   if (!file) return false;
   const uint64_t length = file.size();
+  *size = static_cast<uint32_t>(length);  // the caller tells an absent file from one too big by this
   if (length > capacity) {
     file.close();
     return false;
