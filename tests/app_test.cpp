@@ -466,7 +466,10 @@ TEST_CASE("T-96 Hold two section buttons: their contents swap") {
   w.tap(Pad::kick, 4);    // A: four kicks
   w.press(section('B'));  // B copies A
   w.tap(Pad::snare, 2);   // B: kicks and snares
+  w.turn(Encoder::speed, 5);  // and its own tempo
   w.press(section('A'));
+  REQUIRE(w.state(0).bpm == 100);
+  REQUIRE(w.state(1).bpm == 105);
   const int levels_a = w.model().sections[0].undo_levels();
   const int levels_b = w.model().sections[1].undo_levels();
 
@@ -483,9 +486,12 @@ TEST_CASE("T-96 Hold two section buttons: their contents swap") {
   CHECK(w.model().current == 0);                      // neither release switched section
   CHECK(w.model().sections[0].undo_levels() == levels_a + 1);  // one undoable load each
   CHECK(w.model().sections[1].undo_levels() == levels_b + 1);
+  CHECK(w.state(0).bpm == 105);  // the tempo is part of a section, so it travels too
+  CHECK(w.state(1).bpm == 100);
 
   w.press(Button::undo);
   CHECK(steps_of(w.state(0), Pad::snare) == "");  // A's own loop is back
+  CHECK(w.state(0).bpm == 105);                   // at the tempo it has now: undo never moves a knob (D-035)
   w.press(section('B'));
   w.press(Button::undo);
   CHECK(steps_of(w.state(1), Pad::snare) == ".0.0");  // and B's, on its own undo

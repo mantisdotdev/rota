@@ -440,7 +440,10 @@ void Controller::section_hold(int held, uint64_t at_us, Model& model, AudioPath&
   const engine::State kept = first.state();
   engine::load(first, second.state());
   engine::load(second, kept);
-  publish_params(model, audio);
+  // Stopped, nothing else would publish what the swap put under the playing
+  // section; playing, the beat boundary publishes it, so the pattern and the
+  // knobs that shape it arrive together rather than a fraction of a beat apart.
+  if (!model.transport) publish_params(model, audio);
   say(model, at_us, kStatusUs, "swapped %c and %c", letter_of(held < other ? held : other),
       letter_of(held < other ? other : held));
 }
