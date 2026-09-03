@@ -211,33 +211,35 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
   bool have_filter = false;
   bool have_fx = false;
   bool have_sidechain = false;
+  // A field said twice is a file that says two things: which one the kit meant is not
+  // a question this firmware gets to answer, so it refuses the file instead.
   char* fields[kMaxFields];
   for (int i = 1; i < count; ++i) {
     char* line = lines[i];
     int got = fields_of(line, "id", fields, 1);
     if (got == 1) {
-      if (!is_kit_id(fields[0]) || !copy_word(fields[0], kit.id, sizeof kit.id)) return false;
+      if (have_id || !is_kit_id(fields[0]) || !copy_word(fields[0], kit.id, sizeof kit.id)) return false;
       have_id = true;
       continue;
     }
     int value = 0;
     got = fields_of(line, "swing", fields, 1);
     if (got == 1) {
-      if (!number(fields[0], 100, value)) return false;
+      if (have_swing || !number(fields[0], 100, value)) return false;
       kit.swing_hundredths = static_cast<uint8_t>(value);
       have_swing = true;
       continue;
     }
     got = fields_of(line, "filter", fields, 1);
     if (got == 1) {
-      if (!number(fields[0], engine::kTenthsMax, value)) return false;
+      if (have_filter || !number(fields[0], engine::kTenthsMax, value)) return false;
       kit.filter = static_cast<engine::Tenths>(value);
       have_filter = true;
       continue;
     }
     got = fields_of(line, "fx", fields, 1);
     if (got == 1) {
-      if (!number(fields[0], engine::kTenthsMax, value)) return false;
+      if (have_fx || !number(fields[0], engine::kTenthsMax, value)) return false;
       kit.fx = static_cast<engine::Tenths>(value);
       have_fx = true;
       continue;
@@ -247,7 +249,10 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
       int on = 0;
       int duck = 0;
       int release = 0;
-      if (!number(fields[0], 1, on) || !number(fields[1], 24, duck) || !number(fields[2], 5000, release)) return false;
+      if (have_sidechain || !number(fields[0], 1, on) || !number(fields[1], 24, duck) ||
+          !number(fields[2], 5000, release)) {
+        return false;
+      }
       kit.sidechain = engine::Sidechain{on == 1, static_cast<uint8_t>(duck), static_cast<uint16_t>(release)};
       have_sidechain = true;
       continue;

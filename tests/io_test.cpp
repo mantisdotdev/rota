@@ -763,3 +763,18 @@ TEST_CASE("T-101 A kit file missing any one of its fields does not load") {
     CHECK_FALSE(io::load_kit("lofi", kit));  // a zero left where a field should be is not this kit
   }
 }
+
+TEST_CASE("T-101 A kit file that says a thing twice does not load") {
+  hal_fake::reset();
+  engine::Kit kit{};
+  const std::string text = kit_file("lofi/kit.txt");
+  for (const char* said : {"id=lofi", "swing=15", "filter=10", "fx=2", "sidechain=1,5,120",
+                           "pluck=0,2,4,7,9,7,4,2"}) {
+    const std::string twice = said;
+    CAPTURE(twice);
+    put("kits/lofi/kit.txt", text + twice + "\n");
+    CHECK_FALSE(io::load_kit("lofi", kit));  // which of the two it meant is not ours to guess
+  }
+  put("kits/lofi/kit.txt", text);  // and the file it was made from still loads
+  CHECK(io::load_kit("lofi", kit));
+}
