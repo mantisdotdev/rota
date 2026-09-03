@@ -38,6 +38,22 @@ void storage_init() {
 
 namespace hal {
 
+// The 8 MB PSRAM on the board's small QSPI pads (§7.5, D-060), which the Teensy core
+// maps as EXTMEM. `external_psram_size` is the core's own count in megabytes and is 0
+// when no chip is fitted; writing to the section then would fault, so io/ is told
+// there is nowhere to put samples and leaves the sample pads silent.
+extern "C" uint8_t external_psram_size;
+EXTMEM int16_t sample_memory_[kSampleMemoryFrames];
+
+int16_t* sample_memory(uint32_t* frames) {
+  if (external_psram_size == 0) {
+    *frames = 0;
+    return nullptr;
+  }
+  *frames = kSampleMemoryFrames;
+  return sample_memory_;
+}
+
 FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   *size = 0;
   if (!card_ready_) return FileRead::missing;

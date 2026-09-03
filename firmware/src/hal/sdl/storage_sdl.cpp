@@ -14,6 +14,13 @@ std::string full_path(const char* path) { return std::string(ROTA_STORAGE_DIR) +
 
 namespace hal {
 
+// The host has no PSRAM to speak of and no reason to care: an ordinary array.
+int16_t* sample_memory(uint32_t* frames) {
+  static int16_t memory[kSampleMemoryFrames];
+  *frames = kSampleMemoryFrames;
+  return memory;
+}
+
 FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size) {
   *size = 0;
   const std::filesystem::path target = full_path(path);

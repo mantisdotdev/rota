@@ -1,4 +1,4 @@
-// io/ (spec/scenarios.md T-56, T-59, T-89, T-97, T-98, T-99): the song and settings
+// io/ (spec/scenarios.md T-56, T-59, T-89, T-97, T-98, T-99, T-100): the song and settings
 // files the card holds, the app keeping them as the player plays, and the id a
 // shared loop carries.
 #include <cstring>
@@ -7,6 +7,7 @@
 
 #include "app_support.h"
 #include "engine_support.h"
+#include "io/kit.h"
 #include "io/share.h"
 #include "io/store.h"
 #include "ui/settings.h"
@@ -497,4 +498,146 @@ TEST_CASE("T-89 A pad in settings is inert: no sound, no mute, no steps") {
   w.pad_up(Pad::hat);
   CHECK(w.audition_samples(Pad::hat).size() == sounded);
   CHECK(engine::is_empty(engine::track_of(w.state(0), Pad::hat)));  // and it is a menu, so nothing was tapped in
+}
+
+namespace {
+
+void put_u16(std::string& out, uint16_t value) {
+  out += static_cast<char>(value & 0xff);
+  out += static_cast<char>((value >> 8) & 0xff);
+}
+
+void put_u32(std::string& out, uint32_t value) {
+  put_u16(out, static_cast<uint16_t>(value & 0xffff));
+  put_u16(out, static_cast<uint16_t>(value >> 16));
+}
+
+// A RIFF WAVE around `data`, right or wrong in whichever way the case is about.
+std::string wave_of(const std::string& data, uint16_t format, uint16_t channels, uint32_t rate, uint16_t bits) {
+  std::string fmt;
+  put_u16(fmt, format);
+  put_u16(fmt, channels);
+  put_u32(fmt, rate);
+  put_u32(fmt, rate * channels * bits / 8);                  // byte rate
+  put_u16(fmt, static_cast<uint16_t>(channels * bits / 8));  // block align
+  put_u16(fmt, bits);
+  std::string out = "RIFF";
+  put_u32(out, static_cast<uint32_t>(4 + 8 + fmt.size() + 8 + data.size()));
+  out += "WAVEfmt ";
+  put_u32(out, static_cast<uint32_t>(fmt.size()));
+  out += fmt;
+  out += "data";
+  put_u32(out, static_cast<uint32_t>(data.size()));
+  out += data;
+  return out;
+}
+
+// Every frame holds its own index, so a test can tell one sample from another and see
+// where in the sample memory it landed.
+std::string counted(int frames) {
+  std::string data;
+  for (int i = 0; i < frames; ++i) put_u16(data, static_cast<uint16_t>(i));
+  return data;
+}
+
+std::string wave(int frames, uint16_t format, uint16_t channels, uint32_t rate, uint16_t bits) {
+  return wave_of(counted(frames), format, channels, rate, bits);
+}
+
+std::string mono_wave(int frames) { return wave(frames, 1, 1, 48000, 16); }
+
+// Full scale, alternating, so a pad playing it is unmistakably heard.
+std::string loud_wave(int frames) {
+  std::string data;
+  for (int i = 0; i < frames; ++i) put_u16(data, static_cast<uint16_t>(i % 2 == 0 ? 30000 : -30000));
+  return wave_of(data, 1, 1, 48000, 16);
+}
+
+}  // namespace
+
+TEST_CASE("T-100 The kit's samples come off the card, and one file it cannot use costs one pad") {
+  hal_fake::reset();
+  put("kits/lofi/kick.wav", mono_wave(100));
+  put("kits/lofi/snare.wav", mono_wave(50));
+  // hat has no file at all; the other two have one that cannot be used.
+  put("kits/lofi/clap.wav", wave(30, 1, 2, 48000, 16));                 // stereo
+  put("kits/lofi/rim.wav", mono_wave(2 * sound::kSampleRate + 1));      // longer than two seconds
+
+  sound::SampleBank bank;
+  REQUIRE(io::load_samples(kit(), bank));
+  CHECK(bank.samples[0].frame_count == 100);
+  CHECK(bank.samples[0].frames[7] == 7);                                 // the file's own samples
+  CHECK(bank.samples[1].frame_count == 50);
+  CHECK(bank.samples[1].frames == bank.samples[0].frames + 100);         // packed, not overlapping
+  CHECK(bank.samples[0].frames[99] == 99);                               // and the first is untouched by the second
+
+  for (const int silent : {2, 3, 7}) {  // hat missing, clap stereo, rim too long
+    CAPTURE(silent);
+    CHECK(bank.samples[silent].frames == nullptr);
+    CHECK(bank.samples[silent].frame_count == 0);
+  }
+  CHECK(logged("kits/lofi/hat.wav"));
+  CHECK(logged("kits/lofi/clap.wav"));
+  CHECK(logged("kits/lofi/rim.wav"));
+
+  // A file that is there but is not a WAVE at all is the same story: that pad and no
+  // other. The two that loaded are read again and land where they did before.
+  put("kits/lofi/hat.wav", "not a wave at all");
+  REQUIRE(io::load_samples(kit(), bank));
+  CHECK(bank.samples[2].frames == nullptr);
+  CHECK(bank.samples[0].frame_count == 100);
+  CHECK(bank.samples[0].frames[7] == 7);
+  CHECK(bank.samples[1].frame_count == 50);
+
+  for (const int synth : {4, 5, 6}) {  // bass, chord and pluck have no sample to read
+    CAPTURE(synth);
+    CHECK(bank.samples[synth].frames == nullptr);
+  }
+}
+
+TEST_CASE("T-100 With no card, or nowhere to put samples, every sample pad is silent") {
+  hal_fake::reset();
+  sound::SampleBank bank;
+  CHECK(io::load_samples(kit(), bank));  // no card: it read what there was, which was nothing
+  for (const sound::Sample& sample : bank.samples) CHECK(sample.frames == nullptr);
+  CHECK(logged("kits/lofi/kick.wav"));
+
+  hal_fake::reset();
+  put("kits/lofi/kick.wav", mono_wave(100));
+  hal_fake::refuse_sample_memory(true);  // a board with no PSRAM fitted, which is every board today
+  const size_t before = hal_fake::log().size();
+  CHECK_FALSE(io::load_samples(kit(), bank));
+  for (const sound::Sample& sample : bank.samples) CHECK(sample.frames == nullptr);
+  CHECK(hal_fake::log().size() == before + 1);  // said once, not once a pad
+}
+
+TEST_CASE("T-100 With no card the synth pads play on") {
+  World w;  // an empty card: nothing for the sample pads, everything for the rest
+  w.tap(Pad::bass);
+  w.run_for(kSecond / 10);
+  CHECK(w.last_peak > 0.05f);
+
+  World quiet;  // and a sample pad, on the same empty card, has nothing to play
+  quiet.tap(Pad::kick);
+  quiet.run_for(kSecond / 10);
+  CHECK(quiet.last_peak < 1e-6f);
+}
+
+TEST_CASE("T-100 A sample read off the card is what the pad plays") {
+  hal_fake::reset();
+  put("kits/lofi/kick.wav", loud_wave(4800));  // a tenth of a second of it
+
+  sound::SampleBank bank;
+  REQUIRE(io::load_samples(kit(), bank));
+  REQUIRE(bank.samples[0].frames != nullptr);
+
+  World w(bank);
+  w.tap(Pad::kick);
+  w.run_for(kSecond / 10);
+  CHECK(w.last_peak > 0.05f);  // the card's own samples reached the output
+
+  World silent;  // and without them the same tap leaves nothing anyone could hear
+  silent.tap(Pad::kick);
+  silent.run_for(kSecond / 10);
+  CHECK(silent.last_peak < 1e-6f);  // not exactly zero: the effects chain has its own tail
 }

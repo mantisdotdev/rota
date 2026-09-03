@@ -30,6 +30,9 @@ hal::AudioCallback audio_callback();
 hal::TimerCallback timer_callback();
 uint32_t timer_period_us();
 
+// A board with no PSRAM fitted, which is every board until bring-up (T-100).
+void refuse_sample_memory(bool refuse);
+
 // Every hal::write_file the card was asked for, refused ones included (T-99); with
 // a path, only the ones for that file.
 int writes();

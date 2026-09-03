@@ -15,6 +15,12 @@ constexpr int kPadCount = 8;
 constexpr int kAudioSampleRate = 48000;  // §7.4; equals sound::kSampleRate
 constexpr int kAudioBlockFrames = 128;   // equals sound::kBlockSize
 
+// Room for one kit: eight pads of the two seconds D-081 allows each, and a little
+// over so a sample of exactly two seconds still has room for its file's header while
+// io/ reads it in place.
+constexpr uint32_t kMaxSampleFramesPerPad = kAudioSampleRate * 2;
+constexpr uint32_t kSampleMemoryFrames = kPadCount * kMaxSampleFramesPerPad + 64;
+
 // The round and section buttons in the order of §7.2.
 enum class Button : uint8_t { split, swap, skip, undo, dice, show, play, section_a, section_b, section_c, section_d };
 constexpr int kButtonCount = 11;
@@ -97,6 +103,13 @@ enum class FileRead : uint8_t { missing, unusable, ok };
 // stores at most `capacity` bytes; `*size` is meaningful only with `ok`.
 FileRead read_file(const char* path, uint8_t* out, uint32_t capacity, uint32_t* size);
 bool write_file(const char* path, const uint8_t* data, uint32_t size);
+
+// Where a kit's samples are kept once io/ has read them off the card: the PSRAM of
+// §7.5 on the device, ordinary memory on the host. Megabytes, so not the RAM2 that
+// HAL_BULK_MEMORY names. Returns nullptr and 0 frames when the board has no PSRAM
+// fitted — which every board does until bring-up — and io/ then leaves the sample
+// pads silent rather than writing to memory that is not there.
+int16_t* sample_memory(uint32_t* frames);
 
 // Power (§7.7, §7.4): 0–100, and whether the headphone jack has a plug in it.
 int battery_percent();
