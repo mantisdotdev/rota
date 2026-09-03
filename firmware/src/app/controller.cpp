@@ -141,6 +141,12 @@ void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, Audio
 
 void Controller::pad_down(int pad, uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   pads_[pad] = Press{true, at_us, false, false};
+  // A pad is not an instrument in the song view or in settings: there it picks a song
+  // (§9.6) or does nothing at all (D-096), so it neither sounds nor mutes its track —
+  // a press that mutes during song play is a hole in the pattern the player did not
+  // ask for. The release still unmutes unconditionally, since the view may have
+  // changed while the pad was down.
+  if (model.view == View::song || model.view == View::settings) return;
   set_mute(model, pad, true);
   const int64_t position = audio.position();
   const engine::Event event = audition(model.sections[model.current].state(), *kit_, engine::pad_at(pad),
