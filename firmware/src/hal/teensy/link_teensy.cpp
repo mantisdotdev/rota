@@ -90,6 +90,7 @@ Pending midi_out_;
 Pending sync_out_;
 bool sync_high_ = false;
 uint64_t sync_low_at_ = 0;
+uint64_t next_midi_send_us_ = 0;  // a payload byte may leave only once the last one has (D-114)
 
 void sync_isr() { push_clock(hal::ClockPort::sync, hal::ClockPulse::tick, hal::now_us()); }
 
@@ -179,12 +180,17 @@ int midi_read(uint8_t* out, int capacity) {
   return count;
 }
 
-// One byte at a time, gated on the UART having room so it never blocks — a spin here
-// would hang with interrupts off, since the caller runs the pump outside the lock but the
-// clock's own send is on the timer (D-114).
+// One byte at a time, paced so a clock byte never waits behind more than one payload
+// byte (D-114). Without the pace, the caller's pump would fill the UART's tens-of-bytes
+// TX buffer in one pass and a clock pulse would queue milliseconds deep behind it; with
+// it, at most one payload byte is in flight, so a pulse armed by send_clock_out leaves
+// within one byte time. availableForWrite gates it too, so the write never blocks — a
+// spin would hang with interrupts off.
 int midi_send(const uint8_t* bytes, int count) {
-  if (count <= 0 || Serial1.availableForWrite() <= 0) return 0;
+  const uint64_t now = hal::now_us();
+  if (count <= 0 || now < next_midi_send_us_ || Serial1.availableForWrite() <= 0) return 0;
   Serial1.write(bytes[0]);
+  next_midi_send_us_ = now + hal::kMidiByteUs;  // hold the wire for the byte to leave
   return 1;
 }
 
