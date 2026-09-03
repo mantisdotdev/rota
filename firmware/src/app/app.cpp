@@ -43,6 +43,7 @@ constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
+const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
 
 const engine::Kit& kit = engine::kits::kLofi;
 
@@ -84,6 +85,7 @@ struct Frame {
   Settings settings;
   Tutorial tutorial;
   int armed;
+  bool tap_tempo;
   engine::Fraction playhead;
   uint32_t cycle_index;
 };
@@ -231,6 +233,7 @@ void draw(uint64_t now_us) {
   frame.settings = the_model.settings;
   frame.tutorial = the_model.tutorial;
   frame.armed = controller.armed();
+  frame.tap_tempo = controller.tapping_tempo();
   hal::unlock();
 
   // The prompt rows are reserved while the tutorial runs, except in settings, which
@@ -263,7 +266,7 @@ void draw(uint64_t now_us) {
   overlay.status = showing(frame.status, now_us) ? frame.status.text : nullptr;
   overlay.knob = showing(frame.knob, now_us) ? frame.knob.text : nullptr;
   overlay.footer = footer_text();
-  overlay.armed = armed_text(frame.armed);
+  overlay.armed = frame.tap_tempo ? kTapMarker : armed_text(frame.armed);  // the mode play's hold opened (D-102)
   if (overlay.armed != nullptr) {  // after the bpm on the ring, at the right of the top row elsewhere
     overlay.armed_x = frame.view == View::ring ? ui::kArmedAfterBpm : ui::kWidth - ui::kMargin - ui::text_width(overlay.armed);
   }
@@ -283,6 +286,7 @@ void light_leds(int64_t position, const engine::State& state) {
     if (age >= 0 && age <= kLedFlashFrames) model.hit[engine::index_of(fired.event.track)] = true;
   }
   model.armed = frame.armed == kNoButton ? ui::kNoButton : frame.armed;
+  model.tap_tempo = frame.tap_tempo;
   model.roll = frame.roll;
   model.showing = frame.view != View::ring;
   model.transport = frame.transport;

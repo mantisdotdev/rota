@@ -1,6 +1,7 @@
 // The app under the scripted input harness (tests/app_support.h): the scheduler,
 // the input grammar and the audio path together, on a fake HAL with a fake clock.
-// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82, T-83, T-84.
+// spec/scenarios.md T-05, T-07, T-17, T-18, T-39, T-40, T-78, T-79, T-80, T-81, T-82, T-83, T-84,
+// T-95, T-96.
 #include <memory>
 #include <string>
 
@@ -394,4 +395,125 @@ TEST_CASE("T-84 Hold split and a pad: the roll retriggers at every 1/16, handed 
   w.button_up(Button::split);  // the roll ends with the hold
   w.run_until(w.cycle_start(4));
   CHECK(w.times_in_cycle(Pad::hat, 3) == "");
+}
+
+TEST_CASE("T-95 Hold play, then four taps in rhythm set the bpm") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.hold(Button::play);
+  CHECK(w.status() == "tap 4 times in rhythm");
+  CHECK_FALSE(w.model().transport);  // the hold does not start the loop
+
+  const char* const countdown[] = {"3 more", "2 more", "1 more"};
+  for (int i = 0; i < 3; ++i) {
+    w.press(Button::play);
+    CHECK(w.status() == countdown[i]);
+    w.run_for(kSecond / 2);  // half a second between taps: two beats a second
+  }
+  w.press(Button::play);
+  CHECK(w.status() == "120 bpm");
+  CHECK(w.state(0).bpm == 120);
+  CHECK_FALSE(w.model().transport);  // a tap is never a play
+
+  SUBCASE("a fifth press plays, the mode having ended with the fourth tap") {
+    w.press(Button::play);
+    CHECK(w.model().transport);
+  }
+
+  SUBCASE("the mode times out five seconds after the last tap and changes nothing") {
+    w.hold(Button::play);
+    w.press(Button::play);
+    w.run_for(4 * kSecond);
+    CHECK(w.status() == "3 more");  // still waiting
+    w.run_for(2 * kSecond);
+    CHECK(w.status() == "tempo unchanged");
+    CHECK(w.state(0).bpm == 120);
+  }
+
+  SUBCASE("taps faster than the range clamp to 180 bpm") {
+    w.hold(Button::play);
+    for (int i = 0; i < 4; ++i) w.press(Button::play);  // all inside one microsecond of the clock
+    CHECK(w.status() == "180 bpm");
+    CHECK(w.state(0).bpm == 180);
+  }
+
+  SUBCASE("the tempo reaches the section waiting to play as a knob would") {
+    w.play();
+    w.press(section('B'));  // B copies A and waits for the boundary
+    w.hold(Button::play);
+    for (int i = 0; i < 3; ++i) {
+      w.press(Button::play);
+      w.run_for(kSecond / 4);  // a quarter second between taps: 240 bpm, clamped
+    }
+    w.press(Button::play);
+    CHECK(w.state(0).bpm == 180);
+    CHECK(w.state(1).bpm == 180);
+    CHECK(w.model().transport);  // the taps did not stop the loop
+  }
+}
+
+TEST_CASE("T-95 A hold of play skips the tutorial instead of opening tap tempo") {
+  World w(true);
+  REQUIRE(w.model().tutorial.active);
+  w.hold(Button::play);
+  CHECK(w.status() == "tutorial skipped");
+  CHECK_FALSE(w.model().tutorial.active);
+  CHECK_FALSE(w.model().transport);
+}
+
+TEST_CASE("T-96 Hold two section buttons: their contents swap") {
+  World w;
+  w.tap(Pad::kick, 4);    // A: four kicks
+  w.press(section('B'));  // B copies A
+  w.tap(Pad::snare, 2);   // B: kicks and snares
+  w.press(section('A'));
+  const int levels_a = w.model().sections[0].undo_levels();
+  const int levels_b = w.model().sections[1].undo_levels();
+
+  w.button_down(section('A'));
+  w.run_for(kSecond / 10);
+  w.button_down(section('B'));
+  w.run_for(kSecond / 2);  // A's hold fires with B down
+  w.button_up(section('B'));
+  w.button_up(section('A'));
+
+  CHECK(w.status() == "swapped A and B");
+  CHECK(steps_of(w.state(0), Pad::snare) == ".0.0");  // A plays what B held
+  CHECK(steps_of(w.state(1), Pad::snare) == "");      // and B what A held
+  CHECK(w.model().current == 0);                      // neither release switched section
+  CHECK(w.model().sections[0].undo_levels() == levels_a + 1);  // one undoable load each
+  CHECK(w.model().sections[1].undo_levels() == levels_b + 1);
+
+  w.press(Button::undo);
+  CHECK(steps_of(w.state(0), Pad::snare) == "");  // A's own loop is back
+  w.press(section('B'));
+  w.press(Button::undo);
+  CHECK(steps_of(w.state(1), Pad::snare) == ".0.0");  // and B's, on its own undo
+
+  SUBCASE("two sections without steps have nothing to swap") {
+    w.button_down(section('C'));
+    w.run_for(kSecond / 10);
+    w.button_down(section('D'));
+    w.run_for(kSecond / 2);
+    w.button_up(section('D'));
+    w.button_up(section('C'));
+    CHECK(w.status() == "nothing to swap");
+    CHECK(w.model().sections[2].undo_levels() == 0);
+    CHECK(w.model().sections[3].undo_levels() == 0);
+    CHECK(w.model().current == 1);  // the swap left the player on B; a hold never switches
+  }
+
+  SUBCASE("a third button held joins no swap: the pair is spent until it is released") {
+    const std::string kept = steps_of(w.state(2), Pad::kick);
+    w.button_down(section('A'));
+    w.run_for(kSecond / 10);
+    w.button_down(section('B'));
+    w.button_down(section('C'));
+    w.run_for(kSecond / 2);
+    w.button_up(section('C'));
+    w.button_up(section('B'));
+    w.button_up(section('A'));
+    CHECK(w.status() == "swapped A and B");
+    CHECK(steps_of(w.state(2), Pad::kick) == kept);
+  }
 }

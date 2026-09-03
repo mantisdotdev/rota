@@ -1,7 +1,7 @@
 // The views under the scripted harness (tests/app_support.h): every §9 view drawn
 // into the fake HAL's framebuffer and read back with the screen's own font, the
 // lights, and the first-run tutorial. spec/scenarios.md T-22, T-45, T-57, T-58,
-// T-85, T-86, T-87, T-88, T-89, T-90, T-91, T-92.
+// T-85, T-86, T-87, T-88, T-89, T-90, T-91, T-92, T-95.
 #include <cstring>
 #include <string>
 #include <utility>
@@ -902,5 +902,29 @@ TEST_CASE("T-91 Button backlights: armed, the roll, show, play and the sections"
   CHECK(same(button_led(Button::section_a), kButtonRest));
   w.press(Button::play);  // stop
   w.frame();
+  CHECK(same(button_led(Button::play), kButtonRest));
+}
+
+TEST_CASE("T-95 Tap-tempo mode is visible: the top row marker and play's light") {
+  World w;
+  w.tap(Pad::kick);
+  w.frame();
+  const uint16_t* fb = screen();
+  CHECK(same(button_led(Button::play), kButtonRest));
+
+  w.hold(Button::play);
+  w.frame();
+  CHECK(text_at(fb, ui::kArmedAfterBpm, ui::kTopRow, "tap", kAccent));  // where an armed button goes
+  CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "tap 4 times in rhythm", kText));
+  CHECK(same(button_led(Button::play), ui::kAccent));  // §8.2: the mode glows like an armed button
+
+  for (int i = 0; i < 4; ++i) {
+    w.press(Button::play);
+    if (i < 3) w.run_for(kSecond / 2);
+  }
+  w.frame();
+  CHECK_FALSE(text_at(fb, ui::kArmedAfterBpm, ui::kTopRow, "tap", kAccent));  // the mode is over
+  CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "120 bpm", kText));
+  CHECK(text_at(fb, ui::kMargin, ui::kTopRow, "120", kText));  // and the corner reads the new tempo
   CHECK(same(button_led(Button::play), kButtonRest));
 }

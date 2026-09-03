@@ -31,7 +31,7 @@ void light(const LedModel& model, Leds& out) {
   if (model.armed != kNoButton && model.armed < kButtonCount) out.buttons[model.armed] = kAccent;
   if (model.roll) out.buttons[kSplit] = kAccent;
   if (model.showing) out.buttons[kShow] = kAccent;
-  if (model.transport) out.buttons[kPlay] = kAccent;
+  if (model.transport || model.tap_tempo) out.buttons[kPlay] = kAccent;
   if (model.playing_section != model.current_section) out.buttons[kSectionA + model.playing_section] = scaled(kAccent, kHalfPercent);
   out.buttons[kSectionA + model.current_section] = kAccent;
 }

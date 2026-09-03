@@ -16,6 +16,7 @@ namespace app {
 namespace {
 
 constexpr int kBpmPerDetent = 1;  // D-087
+constexpr uint64_t kMicrosPerMinute = 60000000;  // tap tempo: taps are beats (§6.1)
 constexpr int kSwingPerDetent = 5;   // hundredths (D-096)
 constexpr int kBrightnessPerDetent = 10;
 constexpr int kBrightnessMin = 10;
@@ -78,7 +79,16 @@ void announce(Status& status, uint64_t at_us, uint32_t duration_us, const char* 
 }  // namespace
 
 Controller::Controller(const engine::Kit& kit)
-    : kit_(&kit), dice_(0), pads_{}, buttons_{}, armed_(kNoButton), armed_at_us_(0) {}
+    : kit_(&kit),
+      dice_(0),
+      pads_{},
+      buttons_{},
+      armed_(kNoButton),
+      armed_at_us_(0),
+      tapping_(false),
+      taps_seen_(0),
+      first_tap_us_(0),
+      last_tap_us_(0) {}
 
 void Controller::set_seed(uint32_t seed) { dice_ = engine::Prng(seed); }
 
@@ -111,6 +121,10 @@ void Controller::handle(const hal::InputEvent& event, Model& model, Scheduler& s
 
 void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
   if (armed_ != kNoButton && held_for(armed_at_us_, now_us) >= kArmTimeoutUs) armed_ = kNoButton;  // T-07
+  if (tapping_ && held_for(last_tap_us_, now_us) >= kArmTimeoutUs) {  // the arming timeout, on play (D-102)
+    tapping_ = false;
+    if (taps_seen_ > 0) say(model, now_us, kStatusUs, "tempo unchanged");
+  }
   for (int i = 0; i < hal::kButtonCount; ++i) {
     Press& press = buttons_[i];
     if (press.down && !press.hold_fired && held_for(press.since_us, now_us) >= kHoldUs) {
@@ -339,12 +353,24 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model, S
       tutorial_saw(model, TutorialEvent::share_opened, at_us);
       return;
     case hal::Button::play:
-      if (model.view == View::settings && model.settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
-        factory_reset(at_us, model, scheduler, audio);
+      if (model.view == View::settings) {
+        if (model.settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
+          factory_reset(at_us, model, scheduler, audio);
+        }
+        return;
       }
-      return;  // tap tempo is a later session
+      if (model.tutorial.active) {  // play skips the tutorial held as well as pressed (§8.5, D-097)
+        end_tutorial(model, at_us, kTutorialSkipped);
+        return;
+      }
+      tapping_ = true;
+      taps_seen_ = 0;
+      last_tap_us_ = at_us;
+      say(model, at_us, kStatusUs, "tap 4 times in rhythm");
+      return;
     default:
-      return;  // section swapping is a later session
+      if (is_section(button)) section_hold(section_of(button), at_us, model, audio);
+      return;
   }
 }
 
@@ -391,10 +417,52 @@ void Controller::section_press(int target, uint64_t at_us, Model& model, AudioPa
   }
 }
 
+// Two of A–D held together exchange their contents (§8.2, D-103): one undoable
+// load in each, so undo in a section brings its own loop back. What the swap puts
+// under the playing section lands at the next beat, as any edit does (§6.7).
+void Controller::section_hold(int held, uint64_t at_us, Model& model, AudioPath& audio) {
+  if (model.view == View::song || model.view == View::settings) return;
+  const int other = other_section_held(held);
+  if (other == kNoSection) return;  // a lone hold is half of the song gesture (D-030)
+  // Both buttons are spent until they are released: neither release switches
+  // section, the partner's own hold does not swap the pair back, and a third
+  // button held meanwhile finds no free partner to swap with.
+  buttons_[static_cast<int>(hal::Button::section_a) + held].used = true;
+  Press& partner = buttons_[static_cast<int>(hal::Button::section_a) + other];
+  partner.used = true;
+  partner.hold_fired = true;
+  engine::Section& first = model.sections[held];
+  engine::Section& second = model.sections[other];
+  if (is_empty(first.state()) && is_empty(second.state())) {
+    say(model, at_us, kStatusUs, "nothing to swap");  // no steps either way (D-038)
+    return;
+  }
+  const engine::State kept = first.state();
+  engine::load(first, second.state());
+  engine::load(second, kept);
+  publish_params(model, audio);
+  say(model, at_us, kStatusUs, "swapped %c and %c", letter_of(held < other ? held : other),
+      letter_of(held < other ? other : held));
+}
+
+// The lowest section button held and not already spent in a swap, other than
+// `except`. Three held is not a gesture: one pair swaps, in letter order.
+int Controller::other_section_held(int except) const {
+  for (int i = 0; i < engine::kSectionCount; ++i) {
+    const Press& press = buttons_[static_cast<int>(hal::Button::section_a) + i];
+    if (i != except && press.down && !press.used) return i;
+  }
+  return kNoSection;
+}
+
 // Play (§8.2, D-030): play or stop; with a section held, or in the song view, the
 // song from the top. In settings it runs the selected row (D-096). During the
 // tutorial a press that does not start the song skips it (§8.5, D-097).
 void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio) {
+  if (tapping_) {  // in tap-tempo mode every press is a tap, never a play (D-102)
+    tap_tempo(at_us, model, audio);
+    return;
+  }
   bool section_held = false;
   for (int i = static_cast<int>(hal::Button::section_a); i < hal::kButtonCount; ++i) {
     if (buttons_[i].down) {
@@ -421,6 +489,32 @@ void Controller::play_press(uint64_t at_us, Model& model, Scheduler& scheduler, 
   }
   model.transport = true;
   scheduler.start(model, audio);
+}
+
+// Tap tempo (§8.2, D-102): the four presses after play's hold are the taps and the
+// three intervals between them average into one beat. The bpm reaches the sections
+// a knob would (D-086) and is clamped to the same range as the speed knob.
+void Controller::tap_tempo(uint64_t at_us, Model& model, AudioPath& audio) {
+  if (taps_seen_ == 0) first_tap_us_ = at_us;
+  taps_seen_ += 1;
+  last_tap_us_ = at_us;
+  if (taps_seen_ < kTapTempoTaps) {
+    say(model, at_us, kStatusUs, "%d more", kTapTempoTaps - taps_seen_);
+    return;
+  }
+  tapping_ = false;
+  // Four taps inside one microsecond of the clock would divide by zero, and they
+  // are faster than any tempo anyway, so they read as the top of the range.
+  const uint64_t elapsed_us = held_for(first_tap_us_, at_us);
+  const uint64_t measured = elapsed_us == 0
+                                ? static_cast<uint64_t>(sound::kMaxBpm)
+                                : (kMicrosPerMinute * (kTapTempoTaps - 1) + elapsed_us / 2) / elapsed_us;
+  const int bpm = clamped(static_cast<int>(measured), sound::kMinBpm, sound::kMaxBpm);
+  int targets[2];
+  const int count = edited_sections(model, targets);
+  for (int i = 0; i < count; ++i) model.sections[targets[i]].state().bpm = static_cast<uint8_t>(bpm);
+  publish_params(model, audio);
+  say(model, at_us, kStatusUs, "%d bpm", bpm);
 }
 
 // Stop leaves nothing pending: no song, no switch, no roll (T-81).
@@ -567,6 +661,7 @@ void Controller::open_settings(Model& model, hal::Button other) {
   Press& press = buttons_[static_cast<int>(other)];
   press.used = true;
   press.hold_fired = true;
+  tapping_ = false;  // in settings play runs the selected row (D-096)
   model.view = View::settings;
   model.settings.cursor = 0;
 }
@@ -650,6 +745,7 @@ void Controller::factory_reset(uint64_t at_us, Model& model, Scheduler& schedule
   new (&model) Model(*kit_);
   model.tutorial = Tutorial{true, 0, true};
   armed_ = kNoButton;
+  tapping_ = false;
   publish_params(model, audio);
   say(model, at_us, kStatusUs, "reset");
 }
@@ -676,8 +772,8 @@ void Controller::end_tutorial(Model& model, uint64_t at_us, const char* status) 
   say(model, at_us, kStatusUs, "%s", status);
 }
 
-// A held pad is muted in every section, so a copy made meanwhile and a switch
-// landing meanwhile cannot leave a mute behind.
+// A held pad is muted in every section, so a copy or a swap made meanwhile and a
+// switch landing meanwhile cannot leave a mute behind.
 void Controller::set_mute(Model& model, int pad, bool mute) {
   for (int i = 0; i < engine::kSectionCount; ++i) model.sections[i].state().tracks[pad].mute = mute;
 }

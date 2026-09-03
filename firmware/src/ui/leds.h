@@ -26,6 +26,7 @@ struct LedModel {
   bool roll;                      // split held
   bool showing;                   // a view other than the ring
   bool transport;
+  bool tap_tempo;                 // play's hold is waiting for the four taps (§8.2, D-102)
   int current_section;
   int playing_section;
 };

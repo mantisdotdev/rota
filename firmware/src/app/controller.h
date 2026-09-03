@@ -12,14 +12,16 @@
 // The input grammar (PRD §8, D-085): pads audition on press and edit on a short
 // release; a pad held is muted and turns every knob and button into its per-track
 // version (§8.1); round and section buttons act on a short release and do their
-// hold meaning once the hold passes 300 ms. The views' gestures live here too:
-// show's hold and undo + show (§9.3, §9.4), the settings rows (D-096) and the
-// tutorial's steps (§8.5, D-097). Everything here runs on the main loop under
+// hold meaning once the hold passes 300 ms: play's opens tap tempo (D-102) and two
+// section buttons held together swap their contents (D-103). The views' gestures
+// live here too: show's hold and undo + show (§9.3, §9.4), the settings rows
+// (D-096) and the tutorial's steps (§8.5, D-097). Everything here runs on the main loop under
 // hal::lock(), and writes the model that the scheduler reads on the beat.
 namespace app {
 
 constexpr uint32_t kHoldUs = 300000;          // a press longer than this is a hold
 constexpr uint32_t kArmTimeoutUs = 5000000;   // §8.2: arming times out after 5 s
+constexpr int kTapTempoTaps = 4;              // §8.2: four taps in rhythm set the bpm
 constexpr uint32_t kStatusUs = 1800000;       // §9.1: status text for 1.8 s
 constexpr uint32_t kKnobStatusUs = 1000000;   // §8.3: a knob's value for 1 s
 constexpr int kNoButton = -1;
@@ -38,6 +40,9 @@ class Controller {
 
   // The armed button (split, swap or skip) as a hal::Button index, or kNoButton.
   int armed() const { return armed_; }
+
+  // Tap-tempo mode: play's hold opened it and it is still waiting for taps (§8.2).
+  bool tapping_tempo() const { return tapping_; }
 
  private:
   struct Press {
@@ -59,7 +64,10 @@ class Controller {
   void settings_play(uint64_t at_us, Model& model);
   void factory_reset(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void section_press(int target, uint64_t at_us, Model& model, AudioPath& audio);
+  void section_hold(int held, uint64_t at_us, Model& model, AudioPath& audio);
+  int other_section_held(int except) const;
   void play_press(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void tap_tempo(uint64_t at_us, Model& model, AudioPath& audio);
   void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
   void leave_song(Model& model, uint64_t at_us, const char* status);
@@ -91,6 +99,10 @@ class Controller {
   Press buttons_[hal::kButtonCount];
   int armed_;
   uint64_t armed_at_us_;
+  bool tapping_;           // waiting for the four taps of §8.2
+  int taps_seen_;
+  uint64_t first_tap_us_;  // the first of them: the three intervals are measured from it
+  uint64_t last_tap_us_;   // the mode's last activity, for the 5 s timeout
 };
 
 }  // namespace app
