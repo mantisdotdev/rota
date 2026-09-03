@@ -156,7 +156,11 @@ void draw_playhead(Canvas& canvas, const Geometry& g, float fraction) {
 
 void draw_corners(Canvas& canvas, const RingModel& model) {
   char text[kBatteryTextCapacity];
-  std::snprintf(text, sizeof text, "%d", model.bpm);
+  if (model.external) {
+    std::snprintf(text, sizeof text, "%d ext", model.bpm);  // the number is what is playing; ext says whose (§11)
+  } else {
+    std::snprintf(text, sizeof text, "%d", model.bpm);
+  }
   draw_text(canvas, kMargin, kTopRow, text, kText);
   std::snprintf(text, sizeof text, "%c %d %d%%", model.section, model.song, model.battery);
   draw_text(canvas, kWidth - kMargin - text_width(text), kTopRow, text, kText);

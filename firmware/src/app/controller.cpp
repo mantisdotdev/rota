@@ -135,6 +135,11 @@ void Controller::tick(uint64_t now_us, Model& model, Scheduler& scheduler, Audio
       pad_hold(i, now_us, model);
     }
   }
+  // The wire, folded in by app::tick's Clock::follow just before this call.
+  following_ = scheduler.clock().following();
+  const int lost = scheduler.clock().take_lost_bpm();  // one-shot: a follow just ended
+  if (lost > 0) adopt_bpm(lost, now_us, model, audio);
+  if (scheduler.waiting_for_clock()) say(model, now_us, kStatusUs, "waiting for clock");  // the count-in (D-112)
 }
 
 // Pads (§8.1, D-085): the sound at once, the mute while held, the edit on release.
@@ -530,6 +535,14 @@ void Controller::tap_tempo(uint64_t at_us, Model& model, AudioPath& audio) {
   say(model, at_us, kStatusUs, "%d bpm", bpm);
 }
 
+void Controller::adopt_bpm(int bpm, uint64_t at_us, Model& model, AudioPath& audio) {
+  int targets[2];
+  const int count = edited_sections(model, targets);
+  for (int i = 0; i < count; ++i) model.sections[targets[i]].state().bpm = static_cast<uint8_t>(bpm);
+  publish_params(model, audio);
+  say(model, at_us, kStatusUs, "ext off, %d bpm", bpm);
+}
+
 // Stop leaves nothing pending: no song, no switch, no roll (T-81).
 void Controller::stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio) {
   model.transport = false;
@@ -673,6 +686,10 @@ void Controller::global_knob(hal::Encoder encoder, int detents, uint64_t at_us, 
   engine::State& state = section.state();
   switch (encoder) {
     case hal::Encoder::speed: {
+      if (following_) {  // a MIDI or sync clock owns the tempo; the knob says so (§11, C-09)
+        show_knob(model, at_us, "ext");
+        return;
+      }
       int bpm = static_cast<int>(state.bpm) + detents * kBpmPerDetent;
       if (bpm < sound::kMinBpm) bpm = sound::kMinBpm;
       if (bpm > sound::kMaxBpm) bpm = sound::kMaxBpm;

@@ -97,6 +97,8 @@ struct Frame {
   bool tap_tempo;
   engine::Fraction playhead;
   uint32_t cycle_index;
+  bool following;      // a wire owns the tempo (§11): the ring shows it with `ext`
+  int measured_bpm;    // the followed tempo, for the ring's corner
 };
 Frame frame;
 
@@ -178,7 +180,8 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
   ring.cycle_index = frame.cycle_index;
   ring.playhead = frame.playhead;
   ring.playing = frame.transport;
-  ring.bpm = frame_state.bpm;
+  ring.external = frame.following;
+  ring.bpm = frame.following && frame.measured_bpm > 0 ? frame.measured_bpm : frame_state.bpm;
   ring.section = letter_of(frame.current);
   ring.song = frame.song;
   ring.battery = hal::battery_percent();
@@ -225,6 +228,8 @@ void draw(uint64_t now_us) {
   frame_position = position;
   frame.playhead = scheduler.playhead(position);
   frame.cycle_index = scheduler.cycle_index();
+  frame.following = the_clock.following();
+  frame.measured_bpm = the_clock.measured_bpm();
   frame.view = the_model.view;
   frame.status = the_model.status;
   frame.knob = the_model.knob;
@@ -365,8 +370,11 @@ void tick() {
   last_tick_us = now_us;
   hal::InputEvent events[kInputBatch];
   const int count = hal::read_input(events, kInputBatch);
+  hal::ClockIn pulses[kClockInDrain];  // drained outside the lock, as input is
+  const int pulse_count = hal::read_clock_in(pulses, kClockInDrain);
   hal::lock();
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
+  the_clock.follow(pulses, pulse_count, now_us, audio);  // latch the anchor, fold the wire in before the controller reads it
   controller.tick(now_us, the_model, scheduler, audio);
   the_clock.set_ports(the_model.settings.midi_clock_out, the_model.settings.sync_out);
   hal::unlock();
@@ -395,6 +403,20 @@ int64_t audio_position() {
   const int64_t position = audio.position();
   hal::unlock();
   return position;
+}
+
+bool clock_following() {
+  hal::lock();
+  const bool following = the_clock.following();
+  hal::unlock();
+  return following;
+}
+
+int clock_measured_bpm() {
+  hal::lock();
+  const int bpm = the_clock.measured_bpm();
+  hal::unlock();
+  return bpm;
 }
 
 }  // namespace app

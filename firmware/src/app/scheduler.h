@@ -37,6 +37,12 @@ class Scheduler {
   void start(Model& model, AudioPath& audio);
   void stop(AudioPath& audio);
   bool running() const { return running_; }
+  // Between play and the leader's next cycle, while a followed clock is being
+  // waited on (§11, D-112); the controller shows the count-in from it.
+  bool waiting_for_clock() const { return waiting_for_clock_; }
+  // The clock, so the controller can adopt a lost tempo and read `ext` without a
+  // new parameter threaded through its own signatures.
+  Clock& clock() { return *clock_; }
 
   // From the timer, under hal::lock(): hands the audio side every hit due before
   // its position plus the lookahead.
@@ -64,6 +70,7 @@ class Scheduler {
   uint32_t seed_;
   uint32_t generation_;
   bool running_;
+  bool waiting_for_clock_;  // play pressed while following: the count-in waits for the leader (D-112)
   int64_t beat_start_;
   int beat_frames_;
   int beat_in_cycle_;

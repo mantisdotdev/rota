@@ -25,6 +25,7 @@ Scheduler::Scheduler(const engine::Kit& kit, Clock& clock)
       seed_(0),
       generation_(0),
       running_(false),
+      waiting_for_clock_(false),
       beat_start_(0),
       beat_frames_(clock.beat_frames(engine::kDefaultBpm)),
       beat_in_cycle_(0),
@@ -45,6 +46,11 @@ void Scheduler::start(Model& model, AudioPath& audio) {
   clock_->start_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
+  if (clock_->following()) {  // §11, D-112: come in on the leader's cycle, so schedule no beat yet
+    waiting_for_clock_ = true;
+    return;  // generation was bumped first, so a stop still drops handed-over hits (T-82)
+  }
+  waiting_for_clock_ = false;
   const int64_t at = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
   scheduled_until_ = at;
   begin_beat(model, at, true, audio);
@@ -52,6 +58,7 @@ void Scheduler::start(Model& model, AudioPath& audio) {
 
 void Scheduler::stop(AudioPath& audio) {
   running_ = false;
+  waiting_for_clock_ = false;
   clock_->stop_transport();
   generation_ += 1;
   audio.live_generation.store(generation_, std::memory_order_release);
@@ -59,6 +66,21 @@ void Scheduler::stop(AudioPath& audio) {
 
 void Scheduler::tick(Model& model, AudioPath& audio) {
   if (!running_) return;
+  if (waiting_for_clock_) {
+    const int64_t not_before = audio.position() + static_cast<int64_t>(kStartDelayBlocks) * sound::kBlockSize;
+    int64_t at;
+    if (clock_->cycle_boundary(not_before, at)) {
+      waiting_for_clock_ = false;
+      scheduled_until_ = at;  // the first beat lands on the leader's cycle downbeat (D-112)
+      begin_beat(model, at, true, audio);
+    } else if (!clock_->following()) {  // the leader vanished during the count-in: free-run instead
+      waiting_for_clock_ = false;
+      scheduled_until_ = not_before;
+      begin_beat(model, not_before, true, audio);
+    } else {
+      return;  // still waiting; nothing is scheduled and nothing is driven out (no emit while counting in)
+    }
+  }
   const int64_t horizon = audio.position() + kLookaheadFrames;
   while (scheduled_until_ < horizon) {
     const int64_t beat_end = beat_start_ + beat_frames_;

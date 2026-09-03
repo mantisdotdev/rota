@@ -31,6 +31,7 @@ struct RingModel {
   engine::Fraction playhead;
   bool playing;
   int bpm;
+  bool external;  // the tempo comes from a MIDI or sync clock (§11): the corner reads `bpm ext`
   char section;
   int song;
   int battery;
