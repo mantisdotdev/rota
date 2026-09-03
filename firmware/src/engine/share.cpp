@@ -304,6 +304,15 @@ void skip_unknown_fields(Reader& reader, const char* stops) {
   if (reader.accept(kFieldSeparator)) reader.skip_until(stops);
 }
 
+// Scans at most `limit` + 1 characters, so a code that is too long — or one whose
+// terminator is missing altogether — costs a bounded read and no more (T-62).
+bool within_limit(const char* code, int limit) {
+  for (int i = 0; i <= limit; ++i) {
+    if (code[i] == '\0') return true;
+  }
+  return false;
+}
+
 bool read_lineage(Reader& reader, char* lineage) {
   if (!reader.accept(kLineageMark)) {
     lineage[0] = '\0';
@@ -325,6 +334,7 @@ bool operator==(const Song& a, const Song& b) {
 
 Decoded decode(const char* code, const Kit& kit) {
   Decoded result{};
+  if (!within_limit(code, kMaxSectionCodeInput)) return result;
   Reader reader(code);
   if (!reader.accept(kSectionPrefix)) return result;
   result.state = make_state(kit);
@@ -348,6 +358,7 @@ SectionCode encode(const State& state, const Kit& kit) {
 
 DecodedSong decode_song(const char* code, const Kit& kit) {
   DecodedSong result{};
+  if (!within_limit(code, kMaxSongCodeInput)) return result;
   Reader reader(code);
   if (!reader.accept(kSongPrefix)) return result;
   for (int s = 0; s < kSectionCount; ++s) {

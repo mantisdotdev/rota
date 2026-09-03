@@ -11,6 +11,7 @@
 #include "engine/kits/lofi.h"
 #include "engine/share.h"
 #include "hal/hal.h"
+#include "io/share.h"
 #include "ui/color.h"
 #include "ui/draw.h"
 #include "ui/leds.h"
@@ -192,9 +193,10 @@ void draw_song(uint16_t* framebuffer) {
 }
 
 // The QR is made again only when the code changes: an encode at version 10 is
-// milliseconds, a frame is not.
+// milliseconds, a frame is not. The code carries the loop's own id, not the id of
+// the loop it came from, which stays in the state for the footer (§10.2, D-105).
 void draw_share(uint16_t* framebuffer, int bottom) {
-  const engine::SectionCode code = engine::encode(frame_state, kit);
+  const engine::SectionCode code = io::shared_code(frame_state, kit);
   if (std::strcmp(code.text, shown_code.text) != 0) {
     shown_code = code;
     ui::encode_share_qr(shown_code.text, qr);

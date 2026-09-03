@@ -1,4 +1,4 @@
-// Share codes: T-15, T-16, T-45, T-51, T-52 and every golden code in spec/share-format.md §7.
+// Share codes: T-15, T-16, T-45, T-51, T-52, T-62 and every golden code in spec/share-format.md §7.
 #include "engine_support.h"
 
 using namespace support;
@@ -308,4 +308,24 @@ TEST_CASE("T-52 Load RT2:jazz:... on a device or player that has only lofi") {
   CHECK(loaded.kit_substituted);
   CHECK(std::string(loaded.requested_kit) == "jazz");
   CHECK(std::string(encode_song(loaded.song, lofi()).text) == kSongGolden);
+}
+
+TEST_CASE("T-62 A code past the decoder's limit does not load; one at the limit still does") {
+  // A field a later version added, which this one skips (T-16). The limit leaves room
+  // for as much of that as the canonical code itself takes (D-106).
+  const std::string body = kGoldens[0].code;  // G-01
+  const std::string at_limit = body + ":" + std::string(kMaxSectionCodeInput - body.size() - 1, 'x');
+  REQUIRE(at_limit.size() == static_cast<size_t>(kMaxSectionCodeInput));
+  CHECK(decode(at_limit.c_str(), lofi()).ok);
+  CHECK(code_of(decoded(at_limit.c_str())) == body);  // and it re-encodes without the field
+  CHECK_FALSE(decode((at_limit + "x").c_str(), lofi()).ok);
+
+  const std::string song = kSongGolden;
+  const size_t first_section_end = song.find(';');
+  REQUIRE(first_section_end != std::string::npos);
+  const std::string padding(kMaxSongCodeInput - song.size() - 1, 'x');
+  const std::string song_at_limit = song.substr(0, first_section_end) + ":" + padding + song.substr(first_section_end);
+  REQUIRE(song_at_limit.size() == static_cast<size_t>(kMaxSongCodeInput));
+  CHECK(decode_song(song_at_limit.c_str(), lofi()).ok);
+  CHECK_FALSE(decode_song((song_at_limit + "x").c_str(), lofi()).ok);
 }

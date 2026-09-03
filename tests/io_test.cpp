@@ -1,11 +1,13 @@
-// What the card keeps (spec/scenarios.md T-56, T-89, T-97, T-98, T-99): the song files and
-// the settings file io/ writes, and the app keeping them as the player plays.
+// io/ (spec/scenarios.md T-56, T-59, T-89, T-97, T-98, T-99): the song and settings
+// files the card holds, the app keeping them as the player plays, and the id a
+// shared loop carries.
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "app_support.h"
 #include "engine_support.h"
+#include "io/share.h"
 #include "io/store.h"
 #include "ui/settings.h"
 
@@ -224,4 +226,35 @@ TEST_CASE("T-89 A factory reset empties the card too, so the reset survives the 
   CHECK(w.state(0).chance == engine::make_state(kit()).chance);
   CHECK(w.model().settings.song == 1);
   for (const bool filled : w.model().song_filled) CHECK_FALSE(filled);
+}
+
+TEST_CASE("T-59 A shared loop carries its own id, so the loop made from it can say what it is based on") {
+  engine::Section made = support::fresh_section();  // made from scratch: no lineage of its own
+  support::taps(made, Pad::kick, 4);
+  support::taps(made, Pad::snare, 2);
+  support::taps(made, Pad::hat, 2);  // G-04
+  const std::string own = support::code_of(made.state());
+  const std::string shared = io::shared_code(made.state(), kit()).text;
+  REQUIRE(shared.rfind(own + "~", 0) == 0);  // §10.2: every shared loop carries an id
+  const std::string id = shared.substr(own.size() + 1);
+  CHECK(id.size() == static_cast<size_t>(engine::kLineageLength));
+  for (const char c : id) CHECK(((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')));  // base36, safe in a URL (T-45)
+
+  // What the loop made from it holds: the id of the loop it came from.
+  const engine::Decoded child = engine::decode(shared.c_str(), kit());
+  REQUIRE(child.ok);
+  CHECK(std::string(child.state.lineage) == id);
+  CHECK(support::code_of(child.state) == shared);
+
+  // The id names the loop, so it does not move until the loop does, and an unchanged
+  // loop re-shared keeps the id its parent gave it.
+  CHECK(std::string(io::shared_code(made.state(), kit()).text) == shared);
+  CHECK(std::string(io::shared_code(child.state, kit()).text) == shared);
+
+  engine::Section grandchild(child.state);  // one tap on, and the chain moves
+  support::taps(grandchild, Pad::rim, 1);
+  const std::string moved = io::shared_code(grandchild.state(), kit()).text;
+  CHECK(moved.find(id) == std::string::npos);                                  // its own id, not its parent's
+  CHECK(moved.rfind('~') == moved.size() - engine::kLineageLength - 1);        // and exactly one id
+  CHECK(std::string(grandchild.state().lineage) == id);                        // the share view still says based on it
 }

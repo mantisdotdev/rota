@@ -28,4 +28,12 @@ constexpr int kMaxEventsPerCycle = kTrackCount * kMaxEventsPerTrack;
 constexpr int kSectionCodeCapacity = 256;
 constexpr int kSongCodeCapacity = 1024;
 
+// The longest code the decoder will look at, NUL not counted: the canonical worst
+// case and as much again for the fields a later version may add, which a decoder
+// skips (T-16). Every path that carries a code in from outside — a card, a SysEx
+// payload, USB text, the player's paste box — is bounded here rather than at each
+// of them (T-62, D-106).
+constexpr int kMaxSectionCodeInput = 2 * kSectionCodeCapacity;
+constexpr int kMaxSongCodeInput = 2 * kSongCodeCapacity;
+
 }  // namespace engine

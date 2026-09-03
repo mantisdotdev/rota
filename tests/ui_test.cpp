@@ -12,6 +12,7 @@
 #include "engine/kits/lofi.h"
 #include "engine/share.h"
 #include "engine_support.h"
+#include "io/share.h"
 #include "ui/color.h"
 #include "ui/draw.h"
 #include "ui/font.h"
@@ -550,13 +551,21 @@ TEST_CASE("T-88 The share view: the QR at 3 px per module, the code round it, ba
   CHECK(text_at(fb, beside + 7 * ui::kGlyphAdvance, ui::kShareTop + 2 * ui::kLineHeight, "e1.0.0-", kText) == false);
   CHECK(text_at(fb, beside, ui::kShareTop + 3 * ui::kLineHeight, "e1.0.0-", kText));
   CHECK(text_at(fb, beside, ui::kShareTop + 4 * ui::kLineHeight, "e10000-e1-e1-", kText));
-  CHECK(text_at(fb, beside, ui::kShareTop + 5 * ui::kLineHeight, "e1-e1-e1", kText));
+  // `~` does not break a row, so the last token is the empty rim track with the
+  // loop's own id stuck to it, and it takes a row of its own (T-59).
+  const std::string shared = io::shared_code(w.state(0), support::lofi()).text;
+  REQUIRE(shared.rfind(kClassicBeat, 0) == 0);
+  const std::string id = shared.substr(shared.size() - engine::kLineageLength - 1);
+  CHECK(text_at(fb, beside, ui::kShareTop + 5 * ui::kLineHeight, "e1-e1-", kText));
+  CHECK(text_at(fb, beside, ui::kShareTop + 6 * ui::kLineHeight, ("e1" + id).c_str(), kText));
   CHECK(text_at(fb, ui::kShareLeft, ui::kShareTop + side + ui::kShareCodeGap, ui::kScanHint, kLegend));  // what it is for
-  CHECK(decode_qr(grid) == std::string(ui::kPlayerUrlPrefix) + kClassicBeat);  // T-45 on the screen
+  CHECK(decode_qr(grid) == std::string(ui::kPlayerUrlPrefix) + shared);  // T-45 on the screen
 
   w.tap(Pad::rim);  // the view stays live: the code and its QR follow the edit
   w.frame();
-  CHECK(decode_qr(grid_from_screen(fb)) == std::string(ui::kPlayerUrlPrefix) + "RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e10");
+  const std::string edited = io::shared_code(w.state(0), support::lofi()).text;
+  CHECK(edited.rfind("RT2:lofi:100:10:2:0:15:cm:e10000-e1.0.0-e10000-e1-e1-e1-e1-e10~", 0) == 0);
+  CHECK(decode_qr(grid_from_screen(fb)) == std::string(ui::kPlayerUrlPrefix) + edited);
 
   w.press(Button::show);
   CHECK(w.model().view == app::View::ring);

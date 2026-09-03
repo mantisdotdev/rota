@@ -1,11 +1,12 @@
 # Share format (RT2)
 
-Normative form of PRD §10, incorporating D-011 (swing in hundredths), D-013 (16-step cap and code length), D-014 (per-track values in tenths), D-018 (safe character set), D-020 (note positions), D-025 (song code), D-026 (unknown kit) and D-043 (the `RT2` prefix). The share code is the canonical description of a loop: the same code must load identically in the web player, on the device and in the test suite, and the golden codes in §7 must survive decode → encode byte-for-byte on every build (PRD §12 rule 3).
+Normative form of PRD §10, incorporating D-011 (swing in hundredths), D-013 (16-step cap and code length), D-014 (per-track values in tenths), D-018 (safe character set), D-020 (note positions), D-025 (song code), D-026 (unknown kit), D-043 (the `RT2` prefix), D-105 (the id a shared loop carries) and D-106 (the decoder's size cap). The share code is the canonical description of a loop: the same code must load identically in the web player, on the device and in the test suite, and the golden codes in §7 must survive decode → encode byte-for-byte on every build (PRD §12 rule 3).
 
 ## 1. Versioning and character set
 
 - Every code starts with a version prefix: `RT2` for a section, `RT2S` for a song.
 - Decoders read the fields they know and ignore what they do not: extra `:`-separated fields after the tracks field, and characters after the four per-track modifier digits, are skipped without error (T-16).
+- A decoder reads at most 512 characters of a section code and 2048 of a song code — the worst cases of §6 and §5 and as much again for the fields a later version adds — and refuses anything longer (T-62, D-106).
 - Any change to the meaning of an existing field or character is a new version (`RT3`), never a silent change to `RT2` (CLAUDE.md, Landmines). D-043, the rename from `PB2` to `RT2`, was the last pre-release change.
 - **Character set (D-018, T-45):** a section code uses only `A–Z a–z 0–9 : . , - ~`; a song code adds `;` and `/`. Every one of these is allowed unencoded in a URL fragment by RFC 3986 and left alone by browsers, is a plain byte in a byte-mode QR, survives message auto-linking, and is a valid MIDI SysEx data byte. No code ever contains `#`, `|`, space or any other character.
 
@@ -25,7 +26,7 @@ RT2:<kit>:<bpm>:<filter>:<fx>:<chance>:<swing>:<key>:<tracks>[~<lineage>]
 | swing | integer | 0–100 | swing in hundredths; lofi default 15 (D-011) |
 | key | root + mode | roots `c cs d ds e f fs g gs a as b` (`s` = sharp); modes `m` minor, `M` major, `dor` dorian, `pm` pentatonic minor, `pM` pentatonic major | e.g. `cm` = C minor, `fsdor` = F# dorian |
 | tracks | 8 track strings joined by `-` | always 8 | pad order kick, snare, hat, clap, bass, chord, pluck, rim |
-| lineage | `~` + 6 base36 chars | optional | id of the loop this one was loaded from (§10.2) |
+| lineage | `~` + 6 base36 chars | optional | the id of the loop the code carries. A decoder stores it as the loaded loop's lineage — the loop it came from — and a device sharing a loop writes that loop's own id here, not the id it was itself loaded from (§10.2, D-105). |
 
 Roots are written with sharps only (`as`, never a flat), and the sharp is the letter `s`.
 
@@ -71,7 +72,7 @@ Byte-identical round trips need exactly one spelling per state:
 - Lowercase throughout, except the `RT2`/`RT2S` prefix, the `M` of the major modes (`M`, `pM`) and the arrangement letters `A`–`D`.
 - Always 8 track strings, even when empty.
 - Modifier group omitted iff all four values are at their defaults (§3).
-- Lineage written only when the loop was loaded from a code that carried an id.
+- Lineage written only when the state carries one. A device sharing a loop hands the encoder the loop's own id in place of whatever lineage it holds, so every code the share view shows carries one and the worst case does not grow (§10.2, D-105).
 - No whitespace anywhere.
 
 ## 5. Song code (D-025)
