@@ -7,11 +7,6 @@ namespace app {
 
 namespace {
 
-constexpr int kSecondsPerMinute = 60;
-
-// One beat is 60 / bpm seconds, rounded to a frame; a cycle is four of them (§6.1).
-int frames_of_beat(int bpm) { return (sound::kSampleRate * kSecondsPerMinute + bpm / 2) / bpm; }
-
 bool before(engine::Fraction time, int beat_in_cycle) {
   return static_cast<int64_t>(time.num) * kBeatsPerCycle < static_cast<int64_t>(beat_in_cycle) * time.den;
 }
@@ -24,13 +19,14 @@ engine::State without_mutes(const engine::State& state) {
 
 }  // namespace
 
-Scheduler::Scheduler(const engine::Kit& kit)
+Scheduler::Scheduler(const engine::Kit& kit, Clock& clock)
     : kit_(&kit),
+      clock_(&clock),
       seed_(0),
       generation_(0),
       running_(false),
       beat_start_(0),
-      beat_frames_(frames_of_beat(engine::kDefaultBpm)),
+      beat_frames_(clock.beat_frames(engine::kDefaultBpm)),
       beat_in_cycle_(0),
       cycle_index_(0),
       previous_cycle_start_(0),
@@ -97,7 +93,7 @@ void Scheduler::begin_beat(Model& model, int64_t at, bool first, AudioPath& audi
   if (beat_in_cycle_ == 0) cross_cycle(model, first);
   const engine::State& live = model.sections[model.playing].state();
   playing_ = without_mutes(live);
-  beat_frames_ = frames_of_beat(playing_.bpm);
+  beat_frames_ = clock_->beat_frames(playing_.bpm);
   engine::events(playing_, *kit_, cycle_index_, seed_, list_);
   next_event_ = 0;
   while (next_event_ < list_.count && before(list_.items[next_event_].time, beat_in_cycle_)) ++next_event_;

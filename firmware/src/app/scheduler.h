@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "app/audio_path.h"
+#include "app/clock.h"
 #include "app/model.h"
 #include "engine/events.h"
 #include "engine/kit.h"
@@ -25,7 +26,7 @@ constexpr int kStartDelayBlocks = 2;                        // the first beat be
 
 class Scheduler {
  public:
-  explicit Scheduler(const engine::Kit& kit);
+  Scheduler(const engine::Kit& kit, Clock& clock);
 
   // The session's seed for chance and humanize (D-034); set once at init.
   void set_seed(uint32_t seed);
@@ -59,6 +60,7 @@ class Scheduler {
   engine::Fraction fraction_of(int64_t sample) const;
 
   const engine::Kit* kit_;
+  Clock* clock_;  // asked how long every beat is; shared, since app/ feeds it too
   uint32_t seed_;
   uint32_t generation_;
   bool running_;

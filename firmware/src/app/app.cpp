@@ -5,6 +5,7 @@
 #include <new>
 
 #include "app/card.h"
+#include "app/clock.h"
 #include "app/controller.h"
 #include "app/params.h"
 #include "app/scheduler.h"
@@ -56,7 +57,8 @@ sound::SampleBank the_samples;
 // scheduler's 30 KB event list and the queues stay with the ordinary statics.
 HAL_BULK_MEMORY sound::Engine sound_engine;
 HAL_BULK_MEMORY Model the_model(the_kit);
-Scheduler scheduler(the_kit);
+Clock the_clock;
+Scheduler scheduler(the_kit, the_clock);
 Controller controller(the_kit);
 AudioPath audio;
 FiredLog the_fired_log;
@@ -334,7 +336,8 @@ void init() {
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
   new (&the_model) Model(the_kit);
-  new (&scheduler) Scheduler(the_kit);
+  new (&the_clock) Clock();
+  new (&scheduler) Scheduler(the_kit, the_clock);
   new (&controller) Controller(the_kit);
   audio.reset();
   the_fired_log = FiredLog{};
