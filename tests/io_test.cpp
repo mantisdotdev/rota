@@ -559,7 +559,7 @@ TEST_CASE("T-100 The kit's samples come off the card, and one file it cannot use
   hal_fake::reset();
   put("kits/lofi/kick.wav", mono_wave(100));
   put("kits/lofi/snare.wav", mono_wave(50));
-  put("kits/lofi/hat.wav", "not a wave at all");
+  // hat has no file at all; the other two have one that cannot be used.
   put("kits/lofi/clap.wav", wave(30, 1, 2, 48000, 16));                 // stereo
   put("kits/lofi/rim.wav", mono_wave(2 * sound::kSampleRate + 1));      // longer than two seconds
 
@@ -571,7 +571,7 @@ TEST_CASE("T-100 The kit's samples come off the card, and one file it cannot use
   CHECK(bank.samples[1].frames == bank.samples[0].frames + 100);         // packed, not overlapping
   CHECK(bank.samples[0].frames[99] == 99);                               // and the first is untouched by the second
 
-  for (const int silent : {2, 3, 7}) {  // hat, clap and rim: each file wrong in its own way
+  for (const int silent : {2, 3, 7}) {  // hat missing, clap stereo, rim too long
     CAPTURE(silent);
     CHECK(bank.samples[silent].frames == nullptr);
     CHECK(bank.samples[silent].frame_count == 0);
@@ -579,6 +579,15 @@ TEST_CASE("T-100 The kit's samples come off the card, and one file it cannot use
   CHECK(logged("kits/lofi/hat.wav"));
   CHECK(logged("kits/lofi/clap.wav"));
   CHECK(logged("kits/lofi/rim.wav"));
+
+  // A file that is there but is not a WAVE at all is the same story: that pad and no
+  // other. The two that loaded are read again and land where they did before.
+  put("kits/lofi/hat.wav", "not a wave at all");
+  REQUIRE(io::load_samples(kit(), bank));
+  CHECK(bank.samples[2].frames == nullptr);
+  CHECK(bank.samples[0].frame_count == 100);
+  CHECK(bank.samples[0].frames[7] == 7);
+  CHECK(bank.samples[1].frame_count == 50);
 
   for (const int synth : {4, 5, 6}) {  // bass, chord and pluck have no sample to read
     CAPTURE(synth);
@@ -596,8 +605,22 @@ TEST_CASE("T-100 With no card, or nowhere to put samples, every sample pad is si
   hal_fake::reset();
   put("kits/lofi/kick.wav", mono_wave(100));
   hal_fake::refuse_sample_memory(true);  // a board with no PSRAM fitted, which is every board today
+  const size_t before = hal_fake::log().size();
   CHECK_FALSE(io::load_samples(kit(), bank));
   for (const sound::Sample& sample : bank.samples) CHECK(sample.frames == nullptr);
+  CHECK(hal_fake::log().size() == before + 1);  // said once, not once a pad
+}
+
+TEST_CASE("T-100 With no card the synth pads play on") {
+  World w;  // an empty card: nothing for the sample pads, everything for the rest
+  w.tap(Pad::bass);
+  w.run_for(kSecond / 10);
+  CHECK(w.last_peak > 0.05f);
+
+  World quiet;  // and a sample pad, on the same empty card, has nothing to play
+  quiet.tap(Pad::kick);
+  quiet.run_for(kSecond / 10);
+  CHECK(quiet.last_peak < 1e-6f);
 }
 
 TEST_CASE("T-100 A sample read off the card is what the pad plays") {
