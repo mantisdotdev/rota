@@ -16,6 +16,8 @@ constexpr int kMaxDiceLoops = 4;           // starting loops per kit (§8.2, D-0
 constexpr int kMaxTapTemplates = 4;        // smart-default taps a kit may define per pad; lofi's kick uses four (§6.6)
 constexpr int kModeCount = 5;              // minor, major, dorian, pentatonic minor, pentatonic major (Appendix B)
 constexpr int kKitIdLength = 12;           // kit id, 1–12 characters (share-format §2)
+constexpr int kPadNameLength = 12;         // what a pad is called, as the text view and the status line say it
+constexpr int kPadSourceLength = 24;       // a sample pad's wav file, or a synth pad's preset name
 constexpr int kLineageLength = 6;          // base36 id of the parent loop (§10.1)
 
 // Speed 2 plays the step list twice per cycle, so hits and ghost slots both double.
