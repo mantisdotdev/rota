@@ -291,6 +291,15 @@ int battery_percent() {
 
 bool headphones_inserted() { return false; }
 
+// No MIDI DIN on a desk machine. Two simulators share a cable over UDP behind
+// ROTA_LINK, which link_sdl.cpp adds; with no link there is no port, and the
+// simulator behaves exactly as it did before there was a wire at all.
+int read_clock_in(ClockIn*, int) { return 0; }
+bool send_clock_out(ClockPort, ClockPulse, uint64_t) { return false; }
+int midi_read(uint8_t*, int) { return 0; }
+int midi_send(const uint8_t*, int) { return 0; }
+bool midi_port_open() { return false; }
+
 void log(const char* line) {
   std::puts(line);
   std::fflush(stdout);

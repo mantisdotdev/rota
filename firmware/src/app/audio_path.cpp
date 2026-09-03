@@ -37,6 +37,8 @@ void AudioPath::reset(uint64_t blocks) {
   }
   sound::Params stale;
   params.take(stale);
+  AudioAnchor old_anchor;  // an unclaimed anchor outlives take(), and a test's first must be its own
+  anchor.take(old_anchor);
   audio_blocks_ = blocks;
   low_blocks_.store(static_cast<uint32_t>(blocks));
   control_blocks_ = blocks;
@@ -110,6 +112,7 @@ void AudioPath::render(float* left, float* right) {
   engine_->render(triggers, count, block_);
   std::memcpy(left, block_.left, sizeof block_.left);
   std::memcpy(right, block_.right, sizeof block_.right);
+  anchor.publish(AudioAnchor{block_start, hal::now_us()});
   audio_blocks_ += 1;
   low_blocks_.store(static_cast<uint32_t>(audio_blocks_), std::memory_order_release);
 }
