@@ -314,6 +314,15 @@ bool read_lineage(Reader& reader, char* lineage) {
 
 }  // namespace
 
+bool operator==(const Song& a, const Song& b) {
+  if (a.arrangement_length != b.arrangement_length || std::strcmp(a.lineage, b.lineage) != 0) return false;
+  if (std::memcmp(a.arrangement, b.arrangement, a.arrangement_length) != 0) return false;
+  for (int s = 0; s < kSectionCount; ++s) {
+    if (a.sections[s] != b.sections[s]) return false;
+  }
+  return true;
+}
+
 Decoded decode(const char* code, const Kit& kit) {
   Decoded result{};
   Reader reader(code);

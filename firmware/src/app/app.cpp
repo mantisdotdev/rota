@@ -4,6 +4,7 @@
 #include <cstring>
 #include <new>
 
+#include "app/card.h"
 #include "app/controller.h"
 #include "app/params.h"
 #include "app/scheduler.h"
@@ -42,7 +43,6 @@ constexpr int64_t kLedFlashFrames = sound::kSampleRate / 10;  // a pad lights fu
 constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
-constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
 const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
 
 const engine::Kit& kit = engine::kits::kLofi;
@@ -76,13 +76,15 @@ struct Frame {
   Arrangement arrangement;
   bool song_mode;
   int song_position;
-  bool song_filled;  // any section has steps
+  int song;  // the slot being played and edited, 1–8
+  bool filled[engine::kSongSlotCount];  // which slots hold a song, the one being edited included (§9.6)
   bool song_hint_dismissed;
   bool transport;
   bool roll;
   int current;
   int playing;
-  Settings settings;
+  io::Settings settings;
+  int settings_cursor;
   Tutorial tutorial;
   int armed;
   bool tap_tempo;
@@ -171,7 +173,7 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
   ring.playing = frame.transport;
   ring.bpm = frame_state.bpm;
   ring.section = letter_of(frame.current);
-  ring.song = kSongNumber;
+  ring.song = frame.song;
   ring.battery = hal::battery_percent();
   ring.flashes = flashes;
   ring.flash_count = collect_flashes(position);
@@ -180,8 +182,8 @@ void draw_ring(uint16_t* framebuffer, int64_t position, int bottom) {
 
 void draw_song(uint16_t* framebuffer) {
   ui::SongModel song{};
-  song.song = kSongNumber;
-  song.filled[kSongNumber - 1] = frame.song_filled || frame.arrangement.length > 0;
+  song.song = frame.song;
+  for (int i = 0; i < engine::kSongSlotCount; ++i) song.filled[i] = frame.filled[i];
   song.letters = frame.arrangement.letters;
   song.length = frame.arrangement.length;
   song.playing = frame.song_mode ? frame.song_position : ui::kNoLetter;
@@ -201,10 +203,10 @@ void draw_share(uint16_t* framebuffer, int bottom) {
 }
 
 void draw_settings(uint16_t* framebuffer) {
-  const Settings& settings = frame.settings;
+  const io::Settings& settings = frame.settings;
   const ui::SettingsModel model{frame_state.key,      frame_state.swing,      kit.id,           settings.brightness,
                                 settings.sleep_minutes, settings.midi_clock_in, settings.midi_clock_out, settings.sync_in,
-                                settings.sync_out,      kFirmwareVersion,       settings.cursor};
+                                settings.sync_out,      kFirmwareVersion,       frame.settings_cursor};
   ui::draw_settings_view(framebuffer, model);
 }
 
@@ -221,16 +223,20 @@ void draw(uint64_t now_us) {
   frame.arrangement = the_model.arrangement;
   frame.song_mode = the_model.song_mode;
   frame.song_position = the_model.song_position;
-  frame.song_filled = false;
+  frame.song = the_model.settings.song;
+  for (int i = 0; i < engine::kSongSlotCount; ++i) frame.filled[i] = the_model.song_filled[i];
+  // The song being edited counts as filled the moment it has something in it, card or no card.
   for (int i = 0; i < engine::kSectionCount; ++i) {
-    if (!is_empty(the_model.sections[i].state())) frame.song_filled = true;
+    if (!is_empty(the_model.sections[i].state())) frame.filled[frame.song - 1] = true;
   }
+  if (the_model.arrangement.length > 0) frame.filled[frame.song - 1] = true;
   frame.song_hint_dismissed = the_model.song_hint_dismissed;
   frame.transport = the_model.transport;
   frame.roll = the_model.roll;
   frame.current = the_model.current;
   frame.playing = the_model.playing;
   frame.settings = the_model.settings;
+  frame.settings_cursor = the_model.settings_cursor;
   frame.tutorial = the_model.tutorial;
   frame.armed = controller.armed();
   frame.tap_tempo = controller.tapping_tempo();
@@ -332,6 +338,7 @@ void init(const sound::SampleBank& samples) {
   shown_code.text[0] = '\0';
   applied_brightness = -1;
   the_model.tutorial = Tutorial{first_run, 0, false};
+  read_card(the_model, kit);  // the settings and the song the device was left on (D-104)
   audio.init(sound_engine, kit, samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);
@@ -377,6 +384,7 @@ void tick() {
   draw(now_us);
   hal::present();
   light_leds(frame_position, frame_state);
+  keep_card(now_us, the_model, kit);
   if (frame.settings.brightness != applied_brightness) {
     applied_brightness = frame.settings.brightness;
     hal::set_brightness(applied_brightness);

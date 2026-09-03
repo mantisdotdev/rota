@@ -667,7 +667,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   CHECK(w.model().settings.midi_clock_in);
 
   w.turn(Encoder::speed, 7);  // the cursor wraps
-  CHECK(w.model().settings.cursor == 0);
+  CHECK(w.model().settings_cursor == 0);
   CHECK(w.state(0).bpm == 100);  // the speed knob picked rows, it did not set the tempo
   w.turn(Encoder::fx, 1);        // the other knobs are what they always are
   CHECK(w.state(0).fx == 3);
@@ -681,7 +681,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   SUBCASE("play on the run tutorial row starts the tutorial on the ring") {
     open_settings(w, Button::undo, Button::show);
     w.turn(Encoder::speed, -2);
-    CHECK(w.model().settings.cursor == static_cast<int>(ui::SettingsRow::run_tutorial));
+    CHECK(w.model().settings_cursor == static_cast<int>(ui::SettingsRow::run_tutorial));
     w.press(Button::play);
     CHECK(w.model().tutorial.active);
     CHECK(w.model().view == app::View::ring);
@@ -696,7 +696,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
     w.press(Button::show);
     open_settings(w, Button::undo, Button::show);
     w.turn(Encoder::speed, -1);
-    CHECK(w.model().settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset));
+    CHECK(w.model().settings_cursor == static_cast<int>(ui::SettingsRow::factory_reset));
     w.press(Button::play);
     CHECK(w.status() == "hold play to reset");
     CHECK(engine::track_of(w.state(1), Pad::kick).step_count == 1);

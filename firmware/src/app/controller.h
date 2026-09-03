@@ -70,7 +70,9 @@ class Controller {
   void tap_tempo(uint64_t at_us, Model& model, AudioPath& audio);
   void stop_transport(Model& model, Scheduler& scheduler, AudioPath& audio);
   void start_song(uint64_t at_us, Model& model, Scheduler& scheduler, AudioPath& audio);
+  void stop_song(Model& model);
   void leave_song(Model& model, uint64_t at_us, const char* status);
+  void pick_song(int slot, uint64_t at_us, Model& model);
   void encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio);
   void track_knob(hal::Encoder encoder, int pad, int detents, uint64_t at_us, Model& model, engine::Section& section);
   void global_knob(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, engine::Section& section);

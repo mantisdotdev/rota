@@ -154,8 +154,9 @@ void Controller::pad_up(int pad, uint64_t at_us, Model& model, AudioPath& /*audi
 }
 
 void Controller::pad_tap(int pad, uint64_t at_us, Model& model) {
-  if (model.view == View::song) {  // §9.6: pads pick songs there (io/, later); the pick is the gesture the hint waits for
+  if (model.view == View::song) {  // §9.6: pads pick songs there; the pick is the gesture the hint waits for
     model.song_hint_dismissed = true;
+    pick_song(pad + io::kFirstSlot, at_us, model);
     return;
   }
   if (model.view == View::settings) return;  // a menu, not a loop (D-096)
@@ -354,7 +355,7 @@ void Controller::button_hold(hal::Button button, uint64_t at_us, Model& model, S
       return;
     case hal::Button::play:
       if (model.view == View::settings) {
-        if (model.settings.cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
+        if (model.settings_cursor == static_cast<int>(ui::SettingsRow::factory_reset)) {
           factory_reset(at_us, model, scheduler, audio);
         }
         return;
@@ -553,13 +554,28 @@ void Controller::start_song(uint64_t at_us, Model& model, Scheduler& scheduler, 
   tutorial_saw(model, TutorialEvent::song_started, at_us);
 }
 
-// The arrangement emptied under a playing song: song play ends at once and the
-// section that was playing plays on live (T-81).
-void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
+void Controller::stop_song(Model& model) {
   model.song_mode = false;
   model.song_start_pending = false;
   model.song_position = 0;
+}
+
+// The arrangement emptied under a playing song: song play ends at once and the
+// section that was playing plays on live (T-81).
+void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
+  stop_song(model);
   say(model, at_us, kStatusUs, "%s", status);
+}
+
+// §9.6: a pad picks a song, and an empty one becomes a copy of this one. The card
+// work is app::keep_card's, on the next frame and outside the lock (D-104); the
+// transport plays on, but song play does not, since the arrangement it was stepping
+// through is about to be another song's (T-56).
+void Controller::pick_song(int slot, uint64_t at_us, Model& model) {
+  if (slot == model.settings.song || model.picked_song != io::kNoSlot) return;
+  model.picked_song = slot;
+  stop_song(model);
+  say(model, at_us, kStatusUs, "song %d", slot);
 }
 
 // Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob
@@ -666,18 +682,18 @@ void Controller::open_settings(Model& model, hal::Button other) {
   press.hold_fired = true;
   tapping_ = false;  // in settings play runs the selected row (D-096)
   model.view = View::settings;
-  model.settings.cursor = 0;
+  model.settings_cursor = 0;
 }
 
 void Controller::settings_turn(hal::Encoder encoder, int detents, Model& model) {
-  Settings& settings = model.settings;
+  io::Settings& settings = model.settings;
   if (encoder == hal::Encoder::speed) {
-    settings.cursor = wrapped(settings.cursor + detents, ui::kSettingsRowCount);
+    model.settings_cursor = wrapped(model.settings_cursor + detents, ui::kSettingsRowCount);
     return;
   }
   int targets[2];
   const int count = edited_sections(model, targets);
-  switch (static_cast<ui::SettingsRow>(settings.cursor)) {
+  switch (static_cast<ui::SettingsRow>(model.settings_cursor)) {
     case ui::SettingsRow::key:
       for (int i = 0; i < count; ++i) {
         engine::Key& key = model.sections[targets[i]].state().key;
@@ -728,7 +744,7 @@ void Controller::settings_turn(hal::Encoder encoder, int detents, Model& model) 
 }
 
 void Controller::settings_play(uint64_t at_us, Model& model) {
-  switch (static_cast<ui::SettingsRow>(model.settings.cursor)) {
+  switch (static_cast<ui::SettingsRow>(model.settings_cursor)) {
     case ui::SettingsRow::run_tutorial:
       model.tutorial = Tutorial{true, 0, false};
       model.view = View::ring;
@@ -747,6 +763,7 @@ void Controller::factory_reset(uint64_t at_us, Model& model, Scheduler& schedule
   if (model.transport) stop_transport(model, scheduler, audio);
   new (&model) Model(*kit_);
   model.tutorial = Tutorial{true, 0, true};
+  model.erase_pending = true;  // and the card with it: every slot back to an empty song
   armed_ = kNoButton;
   tapping_ = false;
   publish_params(model, audio);

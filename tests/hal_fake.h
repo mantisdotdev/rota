@@ -30,6 +30,9 @@ hal::AudioCallback audio_callback();
 hal::TimerCallback timer_callback();
 uint32_t timer_period_us();
 
+// Every hal::write_file the card was asked for, refused ones included (T-99).
+int writes();
+
 const std::vector<std::string>& log();
 Led led(int pad);
 Led button_led(int button);
