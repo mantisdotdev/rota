@@ -379,8 +379,10 @@ void tick() {
   uint8_t midi_in[kMidiReadBatch];
   const int midi_count = hal::midi_read(midi_in, kMidiReadBatch);
   hal::lock();
+  // Fold the wire in first: a play release and the pulses that establish following can
+  // land in one pass, and start() must see this pass's clock, not the last one's (D-112).
+  the_clock.follow(pulses, pulse_count, now_us, audio);  // also latches the audio anchor
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
-  the_clock.follow(pulses, pulse_count, now_us, audio);  // latch the anchor, fold the wire in before the controller reads it
   controller.tick(now_us, the_model, scheduler, audio);
   the_jam.step(the_model, the_kit, now_us, midi_in, midi_count);  // send the gesture, apply an arrival
   the_clock.set_ports(the_model.settings.midi_clock_out, the_model.settings.sync_out);

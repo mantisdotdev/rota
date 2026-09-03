@@ -48,6 +48,14 @@ bool MidiPort::feed(uint8_t byte, const engine::Kit& kit, Received& out) {
 
   if (byte != kSysExEnd) {
     if (byte >= 0x80) return false;  // a status byte in the middle is not payload; skip it, stay in the message
+    // The header bytes (version 01, a pad 00-07) are control values; only the payload,
+    // which is share-code text, may never hold one. A NUL there would truncate the
+    // decoder's C string and pass a valid prefix through, so a control byte in the
+    // payload means the frame is corrupt: abandon it and re-sync on the next F0 (§10).
+    if (length_ >= kHeaderBytes && byte < 0x20) {
+      in_message_ = false;
+      return false;
+    }
     if (length_ < static_cast<int>(sizeof buffer_) - 1) {
       buffer_[length_++] = byte;  // room kept for the NUL the decoder reads
     } else {

@@ -23,7 +23,9 @@
 
 namespace {
 
-constexpr uint32_t kSyncPulseWidthUs = 5000;  // C-01, unverified
+// C-01: 2 PPQN, tip, active-high, 5 ms wide, from Teenage Engineering's PO-16 guide as
+// the BOM cites it (hardware/BOM.md, "sync in/out"); UNVERIFIED until a scope confirms it (T-118).
+constexpr uint32_t kSyncPulseWidthUs = 5000;
 
 // A byte a status code names, or 0 if it names none this firmware follows.
 bool real_time_pulse(uint8_t byte, hal::ClockPulse& pulse) {
@@ -75,14 +77,17 @@ void push_midi(uint8_t byte) {
   midi_tail_ = next;
 }
 
-// One pulse each port may have armed for a future deadline; poll() emits it when due.
+// One pulse each port may have armed for a future deadline. `armed` is atomic because
+// send_clock_out publishes from the 2 ms timer and link_poll consumes on the main loop;
+// the pulse and deadline are written before armed is set and read after it is seen, so
+// the release/acquire pair keeps a deadline from tearing and a pulse from being missed.
 struct Pending {
-  bool armed;
-  hal::ClockPulse pulse;
-  uint64_t at_us;
+  std::atomic<bool> armed{false};
+  hal::ClockPulse pulse{hal::ClockPulse::tick};
+  uint64_t at_us{0};
 };
-Pending midi_out_{false, hal::ClockPulse::tick, 0};
-Pending sync_out_{false, hal::ClockPulse::tick, 0};
+Pending midi_out_;
+Pending sync_out_;
 bool sync_high_ = false;
 uint64_t sync_low_at_ = 0;
 
@@ -113,25 +118,27 @@ void link_poll() {
     const uint64_t stamp = now - static_cast<uint64_t>(waiting - 1 - i) * hal::kMidiByteUs;
     hal::ClockPulse pulse;
     if (real_time_pulse(byte, pulse)) {
+      noInterrupts();  // the sync interrupt writes the same ring; keep it out for this push
       push_clock(hal::ClockPort::midi, pulse, stamp);
+      interrupts();
     } else {
-      push_midi(byte);
+      push_midi(byte);  // the midi ring has one producer, this loop, so it needs no guard
     }
   }
 
   // Emit a due out pulse. A deadline already past fires now, which is the past-deadline
   // rule hal.h states; the signed difference is what makes "past" mean past.
-  if (midi_out_.armed && static_cast<int64_t>(now - midi_out_.at_us) >= 0) {
+  if (midi_out_.armed.load(std::memory_order_acquire) && static_cast<int64_t>(now - midi_out_.at_us) >= 0) {
     if (Serial1.availableForWrite() > 0) {
       Serial1.write(status_of(midi_out_.pulse));
-      midi_out_.armed = false;
+      midi_out_.armed.store(false, std::memory_order_release);
     }
   }
-  if (sync_out_.armed && static_cast<int64_t>(now - sync_out_.at_us) >= 0) {
+  if (sync_out_.armed.load(std::memory_order_acquire) && static_cast<int64_t>(now - sync_out_.at_us) >= 0) {
     digitalWriteFast(hal::pins::kSyncOut, HIGH);
     sync_high_ = true;
     sync_low_at_ = now + kSyncPulseWidthUs;
-    sync_out_.armed = false;
+    sync_out_.armed.store(false, std::memory_order_release);
   }
   if (sync_high_ && static_cast<int64_t>(now - sync_low_at_) >= 0) {
     digitalWriteFast(hal::pins::kSyncOut, LOW);
@@ -156,8 +163,10 @@ int read_clock_in(ClockIn* out, int capacity) {
 
 bool send_clock_out(ClockPort port, ClockPulse pulse, uint64_t at_us) {
   Pending& pending = port == ClockPort::midi ? midi_out_ : sync_out_;
-  if (pending.armed) return false;  // still holding one: the caller offers it again next tick
-  pending = Pending{true, pulse, at_us};
+  if (pending.armed.load(std::memory_order_acquire)) return false;  // still holding one; offered again next tick
+  pending.pulse = pulse;
+  pending.at_us = at_us;
+  pending.armed.store(true, std::memory_order_release);  // publish after the fields are written
   return true;
 }
 

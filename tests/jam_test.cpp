@@ -36,6 +36,21 @@ bool decode_sent(const std::vector<uint8_t>& bytes, io::Received& out) {
 
 const char* kSenderLoop = "RT2:lofi:120:10:2:0:15:am:e10000-e1.0.0-e10108-e1-e1-e1-e1-e1";
 
+// The pattern a jam copies: steps, alternation and speed (§11, T-114). Compared as the
+// share-code spelling of the steps plus alt and speed, so a mismatch reads plainly.
+bool same_pattern(const engine::Track& a, const engine::Track& b) {
+  if (a.step_count != b.step_count || a.alt != b.alt || a.speed != b.speed) return false;
+  for (int i = 0; i < a.step_count; ++i) {
+    if (a.steps[i].hits != b.steps[i].hits || a.steps[i].note != b.steps[i].note) return false;
+  }
+  return true;
+}
+
+// The mix a jam never touches: level, tone, send, chance and the mute (§11, T-114).
+bool same_mix(const engine::Track& a, const engine::Track& b) {
+  return a.level == b.level && a.tone == b.tone && a.send == b.send && a.chance == b.chance && a.mute == b.mute;
+}
+
 }  // namespace
 
 TEST_CASE("T-113 Hold show and press a pad or dice sends, and does not play the pad") {
@@ -96,6 +111,7 @@ TEST_CASE("T-114 A received track lands as one undoable edit, patterns only") {
   hal_fake::set_midi_port_open(true);
   w.tap(Pad::hat, 1);  // the receiver's own hat, one step
   const engine::Track before = engine::track_of(w.state(0), Pad::hat);
+  const engine::Track before_kick = engine::track_of(w.state(0), Pad::kick);
   const uint8_t receiver_bpm = w.state(0).bpm;  // 100
 
   // A sender whose hat is a different pattern (two steps, a split), at 120 bpm in A minor.
@@ -105,19 +121,22 @@ TEST_CASE("T-114 A received track lands as one undoable edit, patterns only") {
   hal_fake::push_midi(msg, n);
   w.run_for(kSecond / 10);
 
-  // The hat's pattern became the sender's; the receiver's tempo, key and the hat's own
-  // level stayed put (patterns travel, knobs and globals do not).
+  // The hat's whole pattern became the sender's — steps, alternation and speed — while
+  // its mix and every global stayed the receiver's (patterns travel, knobs do not).
   const engine::Track after = engine::track_of(w.state(0), Pad::hat);
-  CHECK(after.step_count == engine::track_of(sender, Pad::hat).step_count);
-  CHECK(after.step_count != before.step_count);
-  CHECK(after.level == before.level);
+  CHECK(same_pattern(after, engine::track_of(sender, Pad::hat)));
+  CHECK_FALSE(same_pattern(after, before));  // it really changed
+  CHECK(same_mix(after, before));            // level, tone, send, chance and mute untouched
   CHECK(w.state(0).bpm == receiver_bpm);  // not the sender's 120
   CHECK(w.state(0).key.root == engine::make_state(app::kit()).key.root);  // still C, not the sender's A
+  // No other track moved: a track message touches only its pad.
+  CHECK(same_pattern(engine::track_of(w.state(0), Pad::kick), before_kick));
   CHECK(w.status() == "got a track");
 
-  // It was a single undoable edit: one undo brings the receiver's hat back.
+  // It was a single undoable edit: one undo brings the receiver's hat back whole.
   w.press(hal::Button::undo);
-  CHECK(engine::track_of(w.state(0), Pad::hat).step_count == before.step_count);
+  CHECK(same_pattern(engine::track_of(w.state(0), Pad::hat), before));
+  CHECK(same_mix(engine::track_of(w.state(0), Pad::hat), before));
 }
 
 TEST_CASE("T-115 A received whole loop brings every pattern and the sender's id, no knobs") {
@@ -126,15 +145,20 @@ TEST_CASE("T-115 A received whole loop brings every pattern and the sender's id,
   w.tap(Pad::kick, 2);
   const uint8_t receiver_bpm = w.state(0).bpm;
 
+  engine::Track before[engine::kTrackCount];
+  for (int t = 0; t < engine::kTrackCount; ++t) before[t] = w.state(0).tracks[t];
+
   const engine::State sender = engine::decode(kSenderLoop, app::kit()).state;
   uint8_t msg[io::kMessageCapacity];
   const int n = io::format_loop(sender, app::kit(), msg);
   hal_fake::push_midi(msg, n);
   w.run_for(kSecond / 10);
 
-  // Every track's pattern is the sender's; the tempo and key stay the receiver's.
+  // Every track's whole pattern is the sender's, its mix the receiver's; the tempo and
+  // key stay the receiver's.
   for (int t = 0; t < engine::kTrackCount; ++t) {
-    CHECK(w.state(0).tracks[t].step_count == sender.tracks[t].step_count);
+    CHECK(same_pattern(w.state(0).tracks[t], sender.tracks[t]));
+    CHECK(same_mix(w.state(0).tracks[t], before[t]));
   }
   CHECK(w.state(0).bpm == receiver_bpm);
   // The loop carries the sender's own id as its lineage, so the share view can say what
@@ -144,6 +168,10 @@ TEST_CASE("T-115 A received whole loop brings every pattern and the sender's id,
   const std::string id = text.substr(text.find('~') + 1);
   CHECK(std::string(w.state(0).lineage) == id);
   CHECK(w.status() == "got a loop");
+
+  // One undo brings the prior whole loop back: it arrived as a single edit.
+  w.press(hal::Button::undo);
+  for (int t = 0; t < engine::kTrackCount; ++t) CHECK(same_pattern(w.state(0).tracks[t], before[t]));
 }
 
 TEST_CASE("T-116 A wire that refuses bytes takes the whole message once, in order") {

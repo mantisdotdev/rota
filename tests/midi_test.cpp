@@ -172,6 +172,13 @@ TEST_CASE("T-112 A malformed message changes nothing and the parser re-syncs on 
     truncated.pop_back();  // no F7
     refused(truncated);  // the next F0 in loop_bytes discards the truncated one
   }
+  SUBCASE("a control byte in the payload is refused, not truncated to its valid prefix") {
+    std::vector<uint8_t> b = loop_bytes(state);  // a complete valid message
+    b.insert(b.end() - 1, 'X');   // trailing garbage, before F7
+    b.insert(b.end() - 2, 0x00);  // a NUL after the complete code: it would end the decoder's C string
+    refused(b);  // without the guard, decode would accept the prefix and ignore the X
+  }
+
   SUBCASE("a status byte scattered through a good message does not break it") {
     std::vector<uint8_t> b = loop_bytes(state);
     b.insert(b.begin() + io::kHeaderBytes + 3, 0xF8);  // a clock byte the HAL would normally have lifted

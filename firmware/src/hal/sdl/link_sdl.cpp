@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -77,12 +78,14 @@ void push_midi(uint8_t byte) {
   midi_tail_ = next;
 }
 
+// send_clock_out runs on the SDL timer thread and link_poll on the main thread, so the
+// armed flag is atomic and its release/acquire publishes the deadline before the flag.
 struct Pending {
-  bool armed;
-  hal::ClockPulse pulse;
-  uint64_t at_us;
+  std::atomic<bool> armed{false};
+  hal::ClockPulse pulse{hal::ClockPulse::tick};
+  uint64_t at_us{0};
 };
-Pending midi_out_{false, hal::ClockPulse::tick, 0};
+Pending midi_out_;
 
 void send_byte(uint8_t byte) {
   sendto(sock_, &byte, 1, 0, reinterpret_cast<sockaddr*>(&peer_), sizeof peer_);
@@ -93,8 +96,13 @@ void send_byte(uint8_t byte) {
 bool wire_free(uint64_t now) { return now >= next_send_us_; }
 void wire_took(uint64_t now) { next_send_us_ = now + hal::kMidiByteUs; }
 
+// Requires exactly <int>:<int> with nothing trailing and both in 1..65535, so a stray
+// character or an out-of-range port (which htons would silently wrap) is rejected.
+bool valid_port(int port) { return port >= 1 && port <= 65535; }
 int parse_ports(const char* spec, int& bind_port, int& peer_port) {
-  return std::sscanf(spec, "%d:%d", &bind_port, &peer_port) == 2 ? 0 : -1;
+  char extra = 0;
+  const int fields = std::sscanf(spec, "%d:%d%c", &bind_port, &peer_port, &extra);
+  return fields == 2 && valid_port(bind_port) && valid_port(peer_port) ? 0 : -1;
 }
 
 }  // namespace
@@ -163,10 +171,11 @@ void link_poll() {
     }
   }
 
-  if (midi_out_.armed && static_cast<int64_t>(now - midi_out_.at_us) >= 0 && wire_free(now)) {
+  if (midi_out_.armed.load(std::memory_order_acquire) && static_cast<int64_t>(now - midi_out_.at_us) >= 0 &&
+      wire_free(now)) {
     send_byte(status_of(midi_out_.pulse));
     wire_took(now);
-    midi_out_.armed = false;
+    midi_out_.armed.store(false, std::memory_order_release);
   }
 }
 
@@ -186,8 +195,10 @@ int read_clock_in(ClockIn* out, int capacity) {
 bool send_clock_out(ClockPort port, ClockPulse pulse, uint64_t at_us) {
   if (port == ClockPort::sync) return true;  // no PO on a desk: accept and drop the sync pulse
   if (!open_) return true;                   // no link: the clock thinks it sent, and nothing goes out
-  if (midi_out_.armed) return false;
-  midi_out_ = Pending{true, pulse, at_us};
+  if (midi_out_.armed.load(std::memory_order_acquire)) return false;
+  midi_out_.pulse = pulse;
+  midi_out_.at_us = at_us;
+  midi_out_.armed.store(true, std::memory_order_release);
   return true;
 }
 
