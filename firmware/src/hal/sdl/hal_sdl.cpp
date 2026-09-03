@@ -55,6 +55,9 @@ int selected_encoder_ = 0;
 uint64_t counter_start_ = 0;
 uint64_t counter_frequency_ = 1;
 bool quit_requested = false;
+// The D key is dice, or section D with shift. Shift is often released first, so the
+// release goes to whichever button the press went to and never leaves one held.
+bool d_held_section = false;
 std::atomic<hal::TimerCallback> timer_callback_{nullptr};  // read on SDL's timer thread
 SDL_TimerID timer_ = 0;
 
@@ -125,7 +128,11 @@ void on_key(const SDL_KeyboardEvent& key) {
     case SDLK_w: push_button(hal::Button::swap, down, at); return;
     case SDLK_k: push_button(hal::Button::skip, down, at); return;
     case SDLK_z: push_button(hal::Button::undo, down, at); return;
-    case SDLK_d: push_button(shifted ? hal::Button::section_d : hal::Button::dice, down, at); return;
+    case SDLK_d: {
+      if (down) d_held_section = shifted;
+      push_button(d_held_section ? hal::Button::section_d : hal::Button::dice, down, at);
+      return;
+    }
     case SDLK_e: push_button(hal::Button::show, down, at); return;
     case SDLK_SPACE: push_button(hal::Button::play, down, at); return;
     case SDLK_a: push_button(hal::Button::section_a, down, at); return;
