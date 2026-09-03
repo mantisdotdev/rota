@@ -180,7 +180,8 @@ Edits (add, remove, split, skip, swap, speed) are applied at the next beat bound
 | 3.5 mm headphone | Stereo, with detect. |
 | 3.5 mm line out | Stereo, fixed level. |
 | 3.5 mm sync in / out | Pocket Operator–compatible pulse clock (in and out on one TRS, PO convention). |
-| 3.5 mm MIDI in / out (TRS type A) | MIDI clock and notes. Jam link uses this cable (§11). |
+| 3.5 mm MIDI in (TRS type A) | MIDI clock. |
+| 3.5 mm MIDI out (TRS type A) | MIDI clock. The jam link uses both jacks and two cables (§11, D-111). |
 
 ### 7.7 Power
 - 2500 mAh Li-Po, target 20 hours of play on headphones, 10 on speaker.
@@ -351,12 +352,13 @@ A song is the four section bodies (everything after `RT2:`, without lineage) joi
 
 ## 11. Sync and jam
 
-- **Clock out**: PO-style pulse on sync out and MIDI clock on MIDI out, always on while playing (configurable).
+- **Clock out**: PO-style pulse on sync out and MIDI clock on MIDI out, always on while playing (configurable). A port being followed is never driven, so a follower still clocks everything downstream of it (D-113).
 - **Clock in**: if a pulse or MIDI clock is present on the input, the device follows it; the speed knob then shows "ext".
-- **Jam link**: two devices connected by one TRS MIDI cable. The device that pressed play first is the clock. Patterns are exchanged as SysEx containing the share code. Gestures:
+- **Jam link**: two devices connected by two TRS MIDI cables, each device's out to the other's in (D-111). The device that pressed play first is the clock: a device that presses play having heard no clock becomes it, and one that presses play while clocks are arriving follows (D-113). Patterns are exchanged as SysEx containing the share code. Gestures:
   - Hold show + press a pad: send that pad's track to the other device (it lands on the same pad, replacing, with undo).
   - Hold show + press dice: send the whole loop.
 - Jam must survive unplugging: each device keeps playing its own parts on its own clock.
+- Two linked devices lock cycles, not only beats: the follower counts from the leader's Start and its first cycle begins on the leader's, so play may wait up to one cycle and counts in on play's backlight (D-112).
 - Latency between linked devices ≤ 3 ms at the audio output.
 
 ---
