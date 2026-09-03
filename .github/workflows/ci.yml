@@ -36,11 +36,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev
       - name: Configure host
-        run: cmake -S host -B build
+        run: |
+          mkdir -p out/screens-raw
+          cmake -S host -B build
       - name: Build host (simulator, tests, tools)
         run: cmake --build build
       - name: Test all
-        run: ./build/tests
+        run: ROTA_SCREENS=out/screens-raw ./build/tests
+      - name: Reference renders match what the views draw (D-101)
+        # The tests write the screen at each state they check; this turns those into
+        # the PNGs the repo keeps and diffs them, so a view change cannot leave the
+        # documentation of it behind. Same shape as the kit headers above.
+        run: |
+          python3 tools/screens.py out/screens-raw spec/screens
+          git add -N spec/screens
+          git diff --exit-code -- spec/screens
       # Never run ./build/simulator here: it opens an SDL window.
 
   firmware:
