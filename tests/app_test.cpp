@@ -430,6 +430,17 @@ TEST_CASE("T-95 Hold play, then four taps in rhythm set the bpm") {
     CHECK(w.state(0).bpm == 120);
   }
 
+  SUBCASE("taps slower than the range clamp to 60 bpm") {
+    w.hold(Button::play);
+    for (int i = 0; i < 3; ++i) {
+      w.press(Button::play);
+      w.run_for(3 * kSecond / 2);  // a beat and a half apart: 40 bpm, and no gap reaches the timeout
+    }
+    w.press(Button::play);
+    CHECK(w.status() == "60 bpm");
+    CHECK(w.state(0).bpm == 60);
+  }
+
   SUBCASE("taps faster than the range clamp to 180 bpm") {
     w.hold(Button::play);
     for (int i = 0; i < 4; ++i) w.press(Button::play);  // all inside one microsecond of the clock
