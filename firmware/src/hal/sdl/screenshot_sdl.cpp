@@ -111,8 +111,11 @@ void save_screenshot(const uint16_t* framebuffer) {
     std::printf("hal/sdl: could not write %s\n", target.c_str());
     return;
   }
-  std::fwrite(png.data(), 1, png.size(), file);
-  std::fclose(file);
+  const size_t written = std::fwrite(png.data(), 1, png.size(), file);
+  if (std::fclose(file) != 0 || written != png.size()) {
+    std::printf("hal/sdl: could not write %s\n", target.c_str());
+    return;
+  }
   std::printf("hal/sdl: saved %s\n", target.c_str());
   std::fflush(stdout);
 }

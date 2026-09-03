@@ -10,13 +10,6 @@ constexpr int kHitPercent = 100;
 constexpr int kRestGlowPercent = 6;  // a backlit button doing nothing, of the text colour
 constexpr int kHalfPercent = 40;     // the section still playing while another is edited
 
-// Button indices in hal::Button's order.
-constexpr int kSplit = 0;
-constexpr int kSwap = 1;
-constexpr int kShow = 5;
-constexpr int kPlay = 6;
-constexpr int kSectionA = 7;
-
 constexpr Rgb kOff{0, 0, 0};
 
 constexpr Rgb scaled(Rgb colour, int percent) { return blend(kOff, colour, percent); }

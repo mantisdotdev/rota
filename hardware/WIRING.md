@@ -21,7 +21,7 @@ How the EVT breadboard unit (hardware/BOM.md, Table 1) connects to the Teensy 4.
 | Display RST | 37 | MSP2834 RESET | | no |
 | Display backlight | 33 (PWM) | MSP2834 LED | Off at boot, full after init (D-052); the module's own series resistor sets the current | no |
 | Pad keys and LEDs | I2C 0x2E | NeoTrellis 1, keys 0–7 | Top two rows: kick snare hat clap / bass chord pluck rim | no |
-| Button keys | I2C 0x2F | NeoTrellis 2 (A0 jumper) | Row 0: split swap skip undo; row 1: dice show play (key 7 spare); row 2: A B C D; row 3 spare. Its LEDs are the button backlights (D-099), written only when a colour changes | no |
+| Button keys and backlights | I2C 0x2F | NeoTrellis 2 (A0 jumper) | Row 0: split swap skip undo; row 1: dice show play (key 7 spare); row 2: A B C D; row 3 spare. Its LEDs are the button backlights, written only when a colour changes. The address and the A0 jumper are Adafruit's (the NeoTrellis guide, BOM row 20); the key-to-button mapping and which buttons light are ours (PRD §7.2, Appendix D, D-045, D-089, D-099, T-91), design intent and not board evidence | no |
 | Speed encoder A / B / push | 2 / 3 / 4 | PEC11R | 4 counts per detent; push to ground, internal pull-up | no |
 | Filter encoder A / B / push | 5 / 9 / 14 | PEC11R | | no |
 | FX encoder A / B / push | 16 / 17 / 22 | PEC11R | | no |

@@ -10,7 +10,13 @@
 namespace ui {
 
 // hal::Button's order: split, swap, skip, undo, dice, show, play, A, B, C, D.
+// ui/ may not include hal/ (§12 rule 1), so app/ asserts these against hal::Button.
 constexpr int kButtonCount = 11;
+constexpr int kSplit = 0;
+constexpr int kSwap = 1;
+constexpr int kShow = 5;
+constexpr int kPlay = 6;
+constexpr int kSectionA = 7;
 constexpr int kNoButton = -1;
 
 struct LedModel {

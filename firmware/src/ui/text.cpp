@@ -101,7 +101,11 @@ bool begin_line(TextLines& out, int track, const char* name, int max_lines) {
   char* line = out.text[out.count];
   std::memset(line, ' ', kTextNameColumns);
   line[kTextNameColumns] = '\0';
-  if (name != nullptr) std::memcpy(line, name, std::strlen(name));
+  if (name != nullptr) {  // kits are an open format read from the card (§12 rule 6): the name is data
+    size_t length = std::strlen(name);
+    if (length > kTextNameColumns - 1) length = kTextNameColumns - 1;  // one space always separates
+    std::memcpy(line, name, length);
+  }
   out.track[out.count] = static_cast<int8_t>(track);
   out.count += 1;
   return true;

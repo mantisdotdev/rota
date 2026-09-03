@@ -46,10 +46,7 @@ struct World {
   // The tutorial has run unless a test asks for a first boot (§8.5, T-22).
   explicit World(bool first_run = false) {
     hal_fake::reset();
-    if (!first_run) {
-      const uint8_t done = '1';
-      hal::write_file(app::kTutorialDoneFile, &done, 1);
-    }
+    if (!first_run) hal::write_file(app::kTutorialDoneFile, &app::kTutorialRan, 1);
     const sound::SampleBank silent{};
     app::init(silent);
     timer_frames = static_cast<int64_t>(hal_fake::timer_period_us()) * sound::kSampleRate / 1000000;

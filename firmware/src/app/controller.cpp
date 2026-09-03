@@ -468,7 +468,9 @@ void Controller::leave_song(Model& model, uint64_t at_us, const char* status) {
 // Knobs (§8.1, §8.3, D-087): a held pad takes the knob for that track alone. A knob
 // is heard the moment it moves, so while a switch is pending it turns on the playing
 // section and on the section waiting to play alike (D-086, revisited 2026-09-03).
-// In settings the speed and filter knobs pick and set the row instead (D-096).
+// In settings the speed and filter knobs pick and set the row instead; fx, chance
+// and volume keep their meaning there, because the loop plays on behind the menu
+// and a performance control that stops working is worse than an inconsistency (D-096).
 
 void Controller::encoder_turn(hal::Encoder encoder, int detents, uint64_t at_us, Model& model, AudioPath& audio) {
   if (detents == 0) return;
@@ -653,11 +655,15 @@ void Controller::factory_reset(uint64_t at_us, Model& model, Scheduler& schedule
 }
 
 // The tutorial (§8.5, D-097): each step waits for its gesture and ignores the rest.
+// Settings is the one view that hides the prompt, so a gesture made in there
+// advances nothing: a step must never pass while the player cannot read it.
 void Controller::tutorial_saw(Model& model, TutorialEvent event, uint64_t at_us) {
   static const TutorialEvent kExpected[ui::kTutorialSteps] = {
       TutorialEvent::kick_tap,    TutorialEvent::kick_tap,      TutorialEvent::snare_tap,
       TutorialEvent::chance_turn, TutorialEvent::share_opened, TutorialEvent::song_started,
   };
+  static_assert(ui::kTutorialSteps == 6, "kExpected must name a gesture for every tutorial step (§8.5, D-097)");
+  if (model.view == View::settings) return;
   if (!model.tutorial.active || event != kExpected[model.tutorial.step]) return;
   model.tutorial.step += 1;
   if (model.tutorial.step >= ui::kTutorialSteps) end_tutorial(model, at_us, kTutorialDone);

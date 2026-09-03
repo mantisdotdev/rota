@@ -790,6 +790,22 @@ TEST_CASE("T-22 Play skips the tutorial, the next boot does not run it, and step
   CHECK_FALSE(app::model().tutorial.active);
 }
 
+TEST_CASE("T-22 A gesture in settings, where the prompt is hidden, advances no tutorial step") {
+  World w(true);
+  w.tap(Pad::kick, 2);
+  REQUIRE(w.model().tutorial.step == 2);  // waiting for the snare
+  open_settings(w, Button::undo, Button::show);
+  w.frame();
+  CHECK_FALSE(has_text(screen(), "tap the snare"));  // settings hides the prompt
+  w.turn(Encoder::chance, 1);                        // step 4's gesture, made unseen
+  w.turn(Encoder::fx, 1);                            // a performance knob still works behind the menu
+  CHECK(w.state(0).fx == 3);
+  CHECK(w.model().tutorial.step == 2);               // the tutorial did not move
+  w.press(Button::show);
+  w.frame();
+  CHECK(has_text(screen(), "tap the snare"));        // still the step the player last saw
+}
+
 TEST_CASE("T-90 Pad LEDs: dim with no steps, the track colour with steps, full for 100 ms after a hit") {
   World w;
   w.frame();

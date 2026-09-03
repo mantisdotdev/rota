@@ -27,6 +27,12 @@ namespace app {
 static_assert(ui::kWidth == hal::kScreenWidth, "ui and hal disagree on the screen width");
 static_assert(ui::kHeight == hal::kScreenHeight, "ui and hal disagree on the screen height");
 static_assert(ui::kButtonCount == hal::kButtonCount, "ui and hal disagree on the button count");
+// The lights index buttons by number; a reorder of hal::Button must not compile.
+static_assert(ui::kSplit == static_cast<int>(hal::Button::split), "ui and hal disagree on the button order");
+static_assert(ui::kSwap == static_cast<int>(hal::Button::swap), "ui and hal disagree on the button order");
+static_assert(ui::kShow == static_cast<int>(hal::Button::show), "ui and hal disagree on the button order");
+static_assert(ui::kPlay == static_cast<int>(hal::Button::play), "ui and hal disagree on the button order");
+static_assert(ui::kSectionA == static_cast<int>(hal::Button::section_a), "ui and hal disagree on the button order");
 
 namespace {
 
@@ -37,8 +43,6 @@ constexpr int kInputBatch = 32;
 constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 constexpr int kSongNumber = 1;  // the one song in memory until io/ keeps eight (D-030)
-constexpr uint8_t kTutorialDone = '1';
-constexpr uint8_t kTutorialPending = '0';
 
 const engine::Kit& kit = engine::kits::kLofi;
 
@@ -298,7 +302,7 @@ void light_leds(int64_t position, const engine::State& state) {
 bool tutorial_done() {
   uint8_t flag = 0;
   uint32_t size = 0;
-  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) && size == 1 && flag == kTutorialDone;
+  return hal::read_file(kTutorialDoneFile, &flag, 1, &size) && size == 1 && flag == kTutorialRan;
 }
 
 }  // namespace
@@ -339,14 +343,14 @@ void tick() {
   hal::InputEvent events[kInputBatch];
   const int count = hal::read_input(events, kInputBatch);
   bool save_tutorial = false;
-  uint8_t tutorial_flag = kTutorialDone;
+  uint8_t tutorial_flag = kTutorialRan;
   hal::lock();
   for (int i = 0; i < count; ++i) controller.handle(events[i], the_model, scheduler, audio);
   controller.tick(now_us, the_model, scheduler, audio);
   if (the_model.tutorial.save_pending) {  // written below, outside the lock: the card is slow
     the_model.tutorial.save_pending = false;
     save_tutorial = true;
-    tutorial_flag = the_model.tutorial.active ? kTutorialPending : kTutorialDone;
+    tutorial_flag = the_model.tutorial.active ? kTutorialPending : kTutorialRan;
   }
   hal::unlock();
   if (save_tutorial) hal::write_file(kTutorialDoneFile, &tutorial_flag, 1);
