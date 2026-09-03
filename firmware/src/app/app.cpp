@@ -11,6 +11,7 @@
 #include "engine/kits/lofi.h"
 #include "engine/share.h"
 #include "hal/hal.h"
+#include "io/kit.h"
 #include "io/share.h"
 #include "ui/color.h"
 #include "ui/draw.h"
@@ -46,14 +47,17 @@ constexpr int kLineCapacity = 320;
 constexpr int kFooterCapacity = 32;
 const char* const kTapMarker = "tap";  // the top row while tap tempo waits (§8.2, D-102)
 
-const engine::Kit& kit = engine::kits::kLofi;
+// The card may replace it at init; the scheduler and controller hold its address,
+// so it is filled in place rather than swapped.
+engine::Kit the_kit = engine::kits::kLofi;
+sound::SampleBank the_samples;
 
 // The engine (207 KB) and the model (85 KB) go to the platform's bulk memory; the
 // scheduler's 30 KB event list and the queues stay with the ordinary statics.
 HAL_BULK_MEMORY sound::Engine sound_engine;
-HAL_BULK_MEMORY Model the_model(kit);
-Scheduler scheduler(kit);
-Controller controller(kit);
+HAL_BULK_MEMORY Model the_model(the_kit);
+Scheduler scheduler(the_kit);
+Controller controller(the_kit);
 AudioPath audio;
 FiredLog the_fired_log;
 uint64_t last_frame_us = 0;
@@ -196,7 +200,7 @@ void draw_song(uint16_t* framebuffer) {
 // milliseconds, a frame is not. The code carries the loop's own id, not the id of
 // the loop it came from, which stays in the state for the footer (§10.2, D-105).
 void draw_share(uint16_t* framebuffer, int bottom) {
-  const engine::SectionCode code = io::shared_code(frame_state, kit);
+  const engine::SectionCode code = io::shared_code(frame_state, the_kit);
   if (std::strcmp(code.text, shown_code.text) != 0) {
     shown_code = code;
     ui::encode_share_qr(shown_code.text, qr);
@@ -206,7 +210,7 @@ void draw_share(uint16_t* framebuffer, int bottom) {
 
 void draw_settings(uint16_t* framebuffer) {
   const io::Settings& settings = frame.settings;
-  const ui::SettingsModel model{frame_state.key,      frame_state.swing,      kit.id,           settings.brightness,
+  const ui::SettingsModel model{frame_state.key,      frame_state.swing,      the_kit.id,           settings.brightness,
                                 settings.sleep_minutes, settings.midi_clock_in, settings.midi_clock_out, settings.sync_in,
                                 settings.sync_out,      kFirmwareVersion,       frame.settings_cursor};
   ui::draw_settings_view(framebuffer, model);
@@ -259,7 +263,7 @@ void draw(uint64_t now_us) {
       draw_ring(framebuffer, position, bottom);
       break;
     case View::text:
-      ui::draw_text_view(framebuffer, frame_state, kit, bottom);
+      ui::draw_text_view(framebuffer, frame_state, the_kit, bottom);
       break;
     case View::song:
       draw_song(framebuffer);
@@ -322,14 +326,16 @@ bool tutorial_done() {
 // Builds everything afresh, so the tests can start over as often as they like; on
 // the device it runs once. Placement new is construction in place, not heap
 // allocation, and it keeps an 85 KB model off the stack.
-void init(const sound::SampleBank& samples) {
+void init() {
   const bool first_run = !tutorial_done();
-  read_card(kit);  // both reads happen before the lock: a card takes milliseconds (D-104)
+  // Everything the card has to say, before the lock: a card takes milliseconds (D-104).
+  read_card(the_kit);
+  io::load_samples(the_kit, the_samples);
   hal::lock();  // a timer already ticking (the harness re-initialises) cannot see the app half made
   new (&sound_engine) sound::Engine();
-  new (&the_model) Model(kit);
-  new (&scheduler) Scheduler(kit);
-  new (&controller) Controller(kit);
+  new (&the_model) Model(the_kit);
+  new (&scheduler) Scheduler(the_kit);
+  new (&controller) Controller(the_kit);
   audio.reset();
   the_fired_log = FiredLog{};
   last_frame_us = 0;
@@ -339,11 +345,11 @@ void init(const sound::SampleBank& samples) {
   applied_brightness = -1;
   the_model.tutorial = Tutorial{first_run, 0, false};
   apply_card(the_model);  // the settings and the song the device was left on
-  audio.init(sound_engine, kit, samples);
+  audio.init(sound_engine, the_kit, the_samples);
   const uint32_t seed = static_cast<uint32_t>(hal::now_us());
   scheduler.set_seed(seed);
   controller.set_seed(seed);
-  audio.params.publish(params_of(the_model.sections[0].state(), kit, the_model.master_volume));
+  audio.params.publish(params_of(the_model.sections[0].state(), the_kit, the_model.master_volume));
   hal::unlock();
   hal::start_audio(&render);
   hal::start_timer(kTimerPeriodUs, &on_timer);
@@ -370,13 +376,14 @@ void tick() {
   draw(now_us);
   hal::present();
   light_leds(frame_position, frame_state);
-  keep_card(now_us, the_model, kit);
+  keep_card(now_us, the_model, the_kit);
   if (frame.settings.brightness != applied_brightness) {
     applied_brightness = frame.settings.brightness;
     hal::set_brightness(applied_brightness);
   }
 }
 
+const engine::Kit& kit() { return the_kit; }
 const Model& model() { return the_model; }
 const FiredLog& fired_log() { return the_fired_log; }
 int64_t audio_position() {

@@ -43,21 +43,20 @@ struct World {
   uint64_t timer_allocations = 0;
   float last_peak = 0.0f;  // the loudest sample of the last block rendered
 
-  // The tutorial has run unless a test asks for a first boot (§8.5, T-22).
-  explicit World(bool first_run = false) {
-    const sound::SampleBank silent{};
-    start(first_run, silent);
-  }
+  // The tutorial has run unless a test asks for a first boot (§8.5, T-22). The card
+  // starts empty, so the app comes up on the kit compiled in with silent sample pads;
+  // a test that wants sounds puts them on the card and starts a world with `keep_card`.
+  explicit World(bool first_run = false) { start(first_run, true); }
 
-  // A world whose sample pads have sounds, for the tests that need to hear one. The
-  // bank is read off the card before the world starts; hal_fake::reset() clears the
-  // card's files but not the memory the samples were read into, so it stays valid.
-  explicit World(const sound::SampleBank& samples) { start(false, samples); }
+  // A world that keeps whatever is already on the fake card, for the tests that put a
+  // kit or its samples there first (T-100, T-101).
+  struct OnThisCard {};
+  explicit World(OnThisCard) { start(false, false); }
 
-  void start(bool first_run, const sound::SampleBank& samples) {
-    hal_fake::reset();
+  void start(bool first_run, bool clear_card) {
+    if (clear_card) hal_fake::reset();
     if (!first_run) hal::write_file(app::kTutorialDoneFile, &app::kTutorialRan, 1);
-    app::init(samples);
+    app::init();
     timer_frames = static_cast<int64_t>(hal_fake::timer_period_us()) * sound::kSampleRate / 1000000;
     REQUIRE(timer_frames > 0);  // a period under 21 us would never advance the world
     REQUIRE(hal_fake::audio_callback() != nullptr);
@@ -67,8 +66,7 @@ struct World {
   // A power cycle: the app starts again on the same card, which is where anything
   // that outlives one has to be (T-56, T-92, T-99).
   void reboot() {
-    const sound::SampleBank silent{};
-    app::init(silent);
+    app::init();
     fired.clear();
     seen = 0;
     origin = 0;

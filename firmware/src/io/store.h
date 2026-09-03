@@ -19,6 +19,7 @@ namespace io {
 // swing belong to a section and travel with the song; the master volume starts at
 // −6 dB every boot (D-087); the settings cursor is where the view was, not a setting.
 struct Settings {
+  char kit[engine::kKitIdLength + 1];  // the folder under kits/ the device plays
   int song;           // 1–8, the slot the device comes back to
   int brightness;     // percent
   int sleep_minutes;  // 0 = never
@@ -28,7 +29,7 @@ struct Settings {
   bool sync_out;
 };
 
-constexpr Settings kDefaultSettings{1, 100, 10, true, true, true, true};  // §7.7: sleep after 10 minutes
+constexpr Settings kDefaultSettings{"lofi", 1, 100, 10, true, true, true, true};  // §7.7: sleep after 10 minutes
 
 // What the §9.4 rows accept, here rather than in the input grammar because the card
 // is the other way into them and both have to agree (D-096, D-104).

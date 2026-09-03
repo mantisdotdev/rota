@@ -3,7 +3,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine/share.h"
 #include "hal/hal.h"
+#include "io/lines.h"
 #include "sound/limits.h"
 
 namespace io {
@@ -11,6 +13,13 @@ namespace io {
 namespace {
 
 constexpr int kPathCapacity = 64;
+// The file is four dice loops at a section code's full length, eight pads with their
+// templates, and a line each for the rest.
+constexpr uint32_t kKitFileCapacity = 4096;
+constexpr int kMaxKitLines = 96;
+constexpr int kMaxFields = 8;  // a pad line, the longest
+constexpr const char* kKitPrefix = "RTK1";
+char kit_file_[kKitFileCapacity];
 constexpr uint32_t kRiffHeaderBytes = 12;
 constexpr uint32_t kChunkHeaderBytes = 8;
 constexpr uint32_t kFormatChunkBytes = 16;  // the least a fmt chunk may hold
@@ -82,6 +91,185 @@ bool find_pcm(const uint8_t* bytes, uint32_t size, const char* path, uint32_t& o
 
 }  // namespace
 
+
+// ---- the kit itself -------------------------------------------------------------
+
+namespace {
+
+// One line's `key=value`, split where the caller's grammar says. Returns how many
+// fields the value held, or -1 when the line is not this key or has too many.
+int fields_of(char* line, const char* key, char** fields, int capacity) {
+  const size_t length = std::strlen(key);
+  if (std::strncmp(line, key, length) != 0 || line[length] != '=') return -1;
+  char* at = line + length + 1;
+  int count = 0;
+  for (;;) {
+    if (count == capacity) return -1;
+    fields[count++] = at;
+    char* comma = std::strchr(at, ',');
+    if (comma == nullptr) return count;
+    *comma = '\0';
+    at = comma + 1;
+  }
+}
+
+// A whole number in `text`, 0 to `most`. False on anything else, so nothing a card
+// holds becomes a value the rest of the firmware would not have produced.
+bool number(const char* text, int most, int& out) {
+  int value = 0;
+  int digits = 0;
+  for (const char* c = text; *c != '\0'; ++c) {
+    if (*c < '0' || *c > '9') return false;
+    value = value * 10 + (*c - '0');
+    if (++digits > 5 || value > most) return false;
+  }
+  out = value;
+  return digits > 0;
+}
+
+bool copy_word(const char* from, char* into, int capacity) {
+  const size_t length = std::strlen(from);
+  if (length == 0 || length >= static_cast<size_t>(capacity)) return false;
+  std::memcpy(into, from, length + 1);
+  return true;
+}
+
+bool read_degrees(char** fields, int count, engine::DegreeList& list) {
+  if (count < 1 || count > engine::kMaxNoteSequenceLength) return false;
+  for (int i = 0; i < count; ++i) {
+    int degree = 0;
+    if (!number(fields[i], 255, degree)) return false;
+    list.degrees[i] = static_cast<uint8_t>(degree);
+  }
+  list.length = static_cast<uint8_t>(count);
+  return true;
+}
+
+bool read_pad(char** fields, int count, engine::KitPad& pad) {
+  if (count != kMaxFields) return false;
+  int pitch = 0;
+  int start = 0;
+  int decay = 0;
+  int octave = 0;
+  int send = 0;
+  const bool sample = std::strcmp(fields[1], "sample") == 0;
+  if (!sample && std::strcmp(fields[1], "synth") != 0) return false;
+  if (!copy_word(fields[0], pad.name, sizeof pad.name)) return false;
+  if (!copy_word(fields[2], pad.source, sizeof pad.source)) return false;
+  if (!number(fields[3], 24, pitch) || !number(fields[4], 100, start) || !number(fields[5], 100, decay) ||
+      !number(fields[6], 9, octave) || !number(fields[7], engine::kTenthsMax, send)) {
+    return false;
+  }
+  pad.voice = sample ? engine::Voice::sample : engine::Voice::synth;
+  pad.pitch_semitones = static_cast<int8_t>(pitch);
+  pad.start = static_cast<float>(start) / 100.0f;  // hundredths on the card, a fraction here (D-109)
+  pad.decay = static_cast<float>(decay) / 100.0f;
+  pad.octave = static_cast<uint8_t>(octave);
+  pad.send = static_cast<engine::Tenths>(send);
+  pad.template_count = 0;
+  return true;
+}
+
+bool read_template(const char* steps, engine::KitPad& pad) {
+  if (pad.template_count >= engine::kMaxTapTemplates) return false;
+  engine::TapTemplate& into = pad.templates[pad.template_count];
+  int count = 0;
+  for (const char* c = steps; *c != '\0'; ++c) {
+    if (count >= engine::kMaxStepsPerTrack) return false;
+    if (!engine::read_step(*c, into.steps[count++])) return false;
+  }
+  if (count == 0) return false;
+  into.step_count = static_cast<uint8_t>(count);
+  pad.template_count += 1;
+  return true;
+}
+
+// Every line of the file, in the order kit_builder.py writes them: the progressions
+// in mode order, the pads in the order share-format §2 fixes, and each pad's
+// templates under it.
+bool read_kit(char** lines, int count, engine::Kit& kit) {
+  if (count < 1 || std::strcmp(lines[0], kKitPrefix) != 0) return false;
+  int progressions = 0;
+  int pads = 0;
+  int dice = 0;
+  bool have_pluck = false;
+  bool have_id = false;
+  char* fields[kMaxFields];
+  for (int i = 1; i < count; ++i) {
+    char* line = lines[i];
+    int got = fields_of(line, "id", fields, 1);
+    if (got == 1) {
+      if (!copy_word(fields[0], kit.id, sizeof kit.id)) return false;
+      have_id = true;
+      continue;
+    }
+    int value = 0;
+    got = fields_of(line, "swing", fields, 1);
+    if (got == 1) {
+      if (!number(fields[0], 100, value)) return false;
+      kit.swing_hundredths = static_cast<uint8_t>(value);
+      continue;
+    }
+    got = fields_of(line, "filter", fields, 1);
+    if (got == 1) {
+      if (!number(fields[0], engine::kTenthsMax, value)) return false;
+      kit.filter = static_cast<engine::Tenths>(value);
+      continue;
+    }
+    got = fields_of(line, "fx", fields, 1);
+    if (got == 1) {
+      if (!number(fields[0], engine::kTenthsMax, value)) return false;
+      kit.fx = static_cast<engine::Tenths>(value);
+      continue;
+    }
+    got = fields_of(line, "sidechain", fields, 3);
+    if (got == 3) {
+      int on = 0;
+      int duck = 0;
+      int release = 0;
+      if (!number(fields[0], 1, on) || !number(fields[1], 24, duck) || !number(fields[2], 5000, release)) return false;
+      kit.sidechain = engine::Sidechain{on == 1, static_cast<uint8_t>(duck), static_cast<uint16_t>(release)};
+      continue;
+    }
+    got = fields_of(line, "progression", fields, engine::kMaxNoteSequenceLength);
+    if (got > 0) {
+      if (progressions >= engine::kModeCount || !read_degrees(fields, got, kit.progressions[progressions])) return false;
+      progressions += 1;
+      continue;
+    }
+    got = fields_of(line, "pluck", fields, engine::kMaxNoteSequenceLength);
+    if (got > 0) {
+      if (have_pluck || !read_degrees(fields, got, kit.pluck_sequence)) return false;
+      have_pluck = true;
+      continue;
+    }
+    got = fields_of(line, "dice", fields, 1);
+    if (got == 1) {
+      if (dice >= engine::kMaxDiceLoops || !copy_word(fields[0], kit.dice_loops[dice], engine::kSectionCodeCapacity)) {
+        return false;
+      }
+      dice += 1;
+      continue;
+    }
+    got = fields_of(line, "pad", fields, kMaxFields);
+    if (got > 0) {
+      if (pads >= engine::kTrackCount || !read_pad(fields, got, kit.pads[pads])) return false;
+      pads += 1;
+      continue;
+    }
+    got = fields_of(line, "template", fields, 1);
+    if (got == 1) {
+      if (pads == 0 || !read_template(fields[0], kit.pads[pads - 1])) return false;
+      continue;
+    }
+    return false;  // a line this firmware does not know: a kit is not a place to guess
+  }
+  kit.dice_loop_count = static_cast<uint8_t>(dice);
+  return have_id && have_pluck && progressions == engine::kModeCount && pads == engine::kTrackCount && dice > 0;
+}
+
+}  // namespace
+
 bool load_samples(const engine::Kit& kit, sound::SampleBank& bank) {
   bank = sound::SampleBank{};
   uint32_t capacity = 0;
@@ -114,6 +302,26 @@ bool load_samples(const engine::Kit& kit, sound::SampleBank& bank) {
     std::memmove(into, reinterpret_cast<const uint8_t*>(into) + offset, frames * sizeof(int16_t));
     bank.samples[i] = sound::Sample{into, static_cast<int>(frames)};
     used += frames;
+  }
+  return true;
+}
+
+bool load_kit(const char* id, engine::Kit& kit) {
+  char path[kPathCapacity];
+  std::snprintf(path, sizeof path, "kits/%s/kit.txt", id);
+  uint32_t size = 0;
+  if (hal::read_file(path, reinterpret_cast<uint8_t*>(kit_file_), kKitFileCapacity - 1, &size) != hal::FileRead::ok ||
+      size == 0) {
+    refuse(path, "is not a kit this device can read");
+    return false;
+  }
+  kit_file_[size] = '\0';
+  char* lines[kMaxKitLines];
+  const int count = split_lines(kit_file_, lines, kMaxKitLines);
+  kit = engine::Kit{};
+  if (count < 0 || !read_kit(lines, count, kit)) {
+    refuse(path, "does not say what a kit is");
+    return false;
   }
   return true;
 }

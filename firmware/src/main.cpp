@@ -3,19 +3,14 @@
 #include <Arduino.h>
 
 #include "app/app.h"
-#include "engine/kits/lofi.h"
 #include "hal/hal.h"
-#include "io/kit.h"
-#include "sound/voice.h"
 
 void setup() {
   hal::init();
-  // The kit's WAVs come off the card into PSRAM. Whatever is missing — a card, the
-  // PSRAM, one file — costs those pads their sound and nothing else: io/ says what it
-  // could not read over the serial log and the synth pads play either way.
-  sound::SampleBank samples;
-  io::load_samples(engine::kits::kLofi, samples);
-  app::init(samples);
+  // The kit the card names, its WAVs, the songs and the settings: app::init reads them
+  // all. Whatever is missing — a card, the PSRAM, one file — costs only what depends on
+  // it, so the instrument comes up either way.
+  app::init();
 }
 
 void loop() {

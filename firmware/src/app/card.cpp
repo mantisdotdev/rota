@@ -4,6 +4,8 @@
 
 #include "engine/state.h"
 #include "hal/hal.h"
+#include "engine/kits/lofi.h"
+#include "io/kit.h"
 #include "io/store.h"
 
 namespace app {
@@ -186,8 +188,11 @@ bool due(bool differs, uint64_t now_us, bool& dirty, uint64_t& changed_us) {
 
 }  // namespace
 
-void read_card(const engine::Kit& kit) {
+void read_card(engine::Kit& kit) {
   io::load_settings(boot_settings);
+  // The kit the settings name, or the one built in when the card has no such kit —
+  // a device with an unreadable kit folder still plays (D-109).
+  if (!io::load_kit(boot_settings.kit, kit)) kit = engine::kits::kLofi;
   io::LoadResult current = io::LoadResult::missing;
   for (int slot = io::kFirstSlot; slot <= io::kLastSlot; ++slot) {
     const bool is_current = slot == boot_settings.song;

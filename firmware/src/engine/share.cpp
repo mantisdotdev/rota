@@ -244,13 +244,8 @@ bool read_track(Reader& reader, Track& track) {
   track.step_count = 0;
   while (!reader.at_any_of(kStepStops)) {
     if (track.step_count >= kMaxStepsPerTrack) return false;
-    const char c = reader.peek();
     Step step{0, 0};
-    if (c != kRestChar) {
-      const int value = base36_value(c);
-      if (value < 0 || value >= kMaxStepValue) return false;
-      step = Step{static_cast<uint8_t>(value / kNotesPerHitRow + 1), static_cast<uint8_t>(value % kNotesPerHitRow)};
-    }
+    if (!read_step(reader.peek(), step)) return false;
     track.steps[track.step_count++] = step;
     reader.advance();
   }
@@ -329,6 +324,17 @@ bool operator==(const Song& a, const Song& b) {
   for (int s = 0; s < kSectionCount; ++s) {
     if (a.sections[s] != b.sections[s]) return false;
   }
+  return true;
+}
+
+bool read_step(char c, Step& step) {
+  if (c == kRestChar) {
+    step = Step{0, 0};
+    return true;
+  }
+  const int value = base36_value(c);
+  if (value < 0 || value >= kMaxStepValue) return false;
+  step = Step{static_cast<uint8_t>(value / kNotesPerHitRow + 1), static_cast<uint8_t>(value % kNotesPerHitRow)};
   return true;
 }
 

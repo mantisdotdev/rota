@@ -47,6 +47,11 @@ struct DecodedSong {
   Song song;
 };
 
+// The step spelling of share-format §2: `.` is a rest, otherwise base36 of
+// (hits − 1) × 8 + note. False when the character is neither. io/ reads a kit's tap
+// templates with this table too, so a step has one spelling in the repo (D-109).
+bool read_step(char c, Step& step);
+
 Decoded decode(const char* code, const Kit& kit);
 SectionCode encode(const State& state, const Kit& kit);
 

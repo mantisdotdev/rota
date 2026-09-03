@@ -62,6 +62,11 @@ struct Kit {
   Sidechain sidechain;
 };
 
+// A kit read off a card and the one compiled in are the same kit or they are not:
+// the test that says so is what keeps tools/kit_builder.py's two outputs in step.
+bool operator==(const Kit& a, const Kit& b);
+inline bool operator!=(const Kit& a, const Kit& b) { return !(a == b); }
+
 inline const KitPad& pad_of(const Kit& kit, Pad pad) { return kit.pads[index_of(pad)]; }
 
 // The scale degree a melodic step's position selects; a position past the end

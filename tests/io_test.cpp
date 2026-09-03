@@ -1,7 +1,9 @@
-// io/ (spec/scenarios.md T-56, T-59, T-89, T-97, T-98, T-99, T-100): the song and settings
+// io/ (spec/scenarios.md T-56, T-59, T-89, T-97, T-98, T-99, T-100, T-101): the song and settings
 // files the card holds, the app keeping them as the player plays, and the id a
 // shared loop carries.
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,14 @@ std::string file(const char* path) {
 
 void put(const char* path, const std::string& text) {
   REQUIRE(hal::write_file(path, reinterpret_cast<const uint8_t*>(text.data()), static_cast<uint32_t>(text.size())));
+}
+
+// A kit's own files as tools/kit_builder.py wrote them, for the tests that compare
+// what the tool writes with what the firmware reads. ROTA_KITS_DIR is where the host
+// build says spec/kits/ is.
+std::string kit_file(const std::string& relative) {
+  std::ifstream file(std::string(ROTA_KITS_DIR) + "/" + relative, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
 std::vector<std::string> lines_of(const std::string& text) {
@@ -135,14 +145,15 @@ TEST_CASE("T-97 A song's own lineage survives the model, not only the file") {
 
 TEST_CASE("T-98 The settings file keeps the rows and the open song, and ignores what it cannot read") {
   hal_fake::reset();
-  const io::Settings written{5, 40, 0, false, true, false, true};
+  const io::Settings written{"jazz", 5, 40, 0, false, true, false, true};
   REQUIRE(io::save_settings(written));
   io::Settings back{};
   REQUIRE(io::load_settings(back));
   CHECK(back == written);
 
-  put("settings.txt", "song=9\nbrightness=40\nnonsense\ncolour=blue\nsleep=30\nmidi-in=7\n");
+  put("settings.txt", "kit=jazz\nsong=9\nbrightness=40\nnonsense\ncolour=blue\nsleep=30\nmidi-in=7\n");
   REQUIRE(io::load_settings(back));
+  CHECK(std::string(back.kit) == "jazz");                            // a name, not a number
   CHECK(back.song == io::kDefaultSettings.song);                     // 9 is not a slot
   CHECK(back.brightness == 40);
   CHECK(back.sleep_minutes == 30);
@@ -627,11 +638,7 @@ TEST_CASE("T-100 A sample read off the card is what the pad plays") {
   hal_fake::reset();
   put("kits/lofi/kick.wav", loud_wave(4800));  // a tenth of a second of it
 
-  sound::SampleBank bank;
-  REQUIRE(io::load_samples(kit(), bank));
-  REQUIRE(bank.samples[0].frames != nullptr);
-
-  World w(bank);
+  World w{World::OnThisCard{}};  // the app reads the card itself, as the device does
   w.tap(Pad::kick);
   w.run_for(kSecond / 10);
   CHECK(w.last_peak > 0.05f);  // the card's own samples reached the output
@@ -640,4 +647,67 @@ TEST_CASE("T-100 A sample read off the card is what the pad plays") {
   silent.tap(Pad::kick);
   silent.run_for(kSecond / 10);
   CHECK(silent.last_peak < 1e-6f);  // not exactly zero: the effects chain has its own tail
+}
+
+TEST_CASE("T-101 The kit on the card is the kit compiled in, and a file that is not a kit does not load") {
+  hal_fake::reset();
+  const std::string text = kit_file("lofi/kit.txt");
+  REQUIRE_FALSE(text.empty());
+  put("kits/lofi/kit.txt", text);
+
+  engine::Kit kit{};
+  REQUIRE(io::load_kit("lofi", kit));
+  CHECK(kit == engine::kits::kLofi);  // what kit_builder.py writes twice says the same thing twice
+
+  CHECK_FALSE(io::load_kit("jazz", kit));  // no such kit on the card
+
+  const std::vector<std::string> lines = lines_of(text);
+  SUBCASE("a file that does not say it is a kit") {
+    put("kits/lofi/kit.txt", text.substr(text.find('\n') + 1));
+    CHECK_FALSE(io::load_kit("lofi", kit));
+    CHECK(logged("kits/lofi/kit.txt"));
+  }
+  SUBCASE("a line this firmware does not know") {
+    put("kits/lofi/kit.txt", text + "colour=blue\n");
+    CHECK_FALSE(io::load_kit("lofi", kit));  // a kit is not a place to guess
+  }
+  SUBCASE("a pad missing") {
+    std::string without;
+    for (const std::string& line : lines) {
+      if (line.rfind("pad=rim", 0) != 0) without += line + "\n";
+    }
+    put("kits/lofi/kit.txt", without);
+    CHECK_FALSE(io::load_kit("lofi", kit));
+  }
+  SUBCASE("a value outside its range") {
+    std::string bad;
+    for (const std::string& line : lines) bad += (line == "filter=10" ? "filter=11" : line) + "\n";
+    put("kits/lofi/kit.txt", bad);
+    CHECK_FALSE(io::load_kit("lofi", kit));
+  }
+  SUBCASE("a step character no share code could hold") {
+    std::string bad;
+    for (const std::string& line : lines) bad += (line == "template=.0.0" ? "template=.!.0" : line) + "\n";
+    put("kits/lofi/kit.txt", bad);
+    CHECK_FALSE(io::load_kit("lofi", kit));
+  }
+}
+
+TEST_CASE("T-101 The device plays the kit its card names, and the one built in when it cannot") {
+  hal_fake::reset();
+  std::string text = kit_file("lofi/kit.txt");
+  const std::string quieter = "swing=40";
+  text.replace(text.find("swing=15"), 8, quieter);  // a kit that is plainly not the built-in one
+  put("kits/jazz/kit.txt", text);
+  put("settings.txt", "kit=jazz\n");
+
+  World w{World::OnThisCard{}};
+  CHECK(app::kit().swing_hundredths == 40);  // the card's kit, not the compiled one
+  CHECK(w.state(0).swing == 40);             // and a fresh loop takes its swing from it
+
+  hal_fake::reset();
+  put("settings.txt", "kit=nosuch\n");
+  World fallback{World::OnThisCard{}};
+  CHECK(app::kit() == engine::kits::kLofi);  // no such kit on the card: the device still plays
+  CHECK(logged("kits/nosuch/kit.txt"));
 }
