@@ -13,6 +13,7 @@
 #include "engine/share.h"
 #include "engine_support.h"
 #include "io/share.h"
+#include "screens.h"
 #include "ui/color.h"
 #include "ui/draw.h"
 #include "ui/font.h"
@@ -310,11 +311,13 @@ TEST_CASE("T-85 The ring's corners, the message row's status for 1.8 s and knob 
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "2 kicks, spread evenly", kText));  // status in the message row
   CHECK(background_row(fb, ui::kBottomRow - 1));  // the ring stops above the message row
   CHECK(background_row(fb, ui::kBottomRow - 2));
+  screens::capture("12-ring-status");
 
   w.turn(Encoder::filter, -1);
   w.frame();
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "filter 0.9", kText));  // the knob's value takes the row
   CHECK_FALSE(has_text(fb, "2 kicks, spread evenly"));
+  screens::capture("13-ring-knob-value");
   w.run_for(kSecond * 9 / 10);
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "filter 0.9", kText));  // 0.9 s: still there
   w.run_for(kSecond / 5);
@@ -326,9 +329,24 @@ TEST_CASE("T-85 The ring's corners, the message row's status for 1.8 s and knob 
   w.press(Button::split);
   w.frame();
   CHECK(text_at(fb, ui::kArmedAfterBpm, ui::kTopRow, "split", kAccent));  // armed: the top row, after the bpm
+  screens::capture("14-ring-split-armed");
   w.press(Button::show);
   w.frame();
   CHECK(text_at(fb, right_aligned("split"), ui::kTopRow, "split", kAccent));  // elsewhere at the row's right
+}
+
+TEST_CASE("T-85 The ring while it plays: the playhead, and the hits it has just passed") {
+  World w;
+  w.tap(Pad::kick, 4);
+  w.tap(Pad::snare, 2);
+  w.tap(Pad::hat, 2);  // G-04
+  w.play();
+  w.run_until(w.at(1, engine::Fraction{5, 8}));
+  w.frame();
+  const uint16_t* fb = screen();
+  CHECK(text_at(fb, ui::kMargin, ui::kTopRow, "100", kText));
+  CHECK_FALSE(background_row(fb, ui::kHeight / 2));  // the ring is drawn across the middle
+  screens::capture("11-ring-playing");
 }
 
 TEST_CASE("T-86 The text view: one line per track in the mini-notation, wrapped to the screen") {
@@ -353,6 +371,7 @@ TEST_CASE("T-86 The text view: one line per track in the mini-notation, wrapped 
   ui::TextLines lines;
   ui::text_lines(w.state(0), engine::kits::kLofi, lines);
   REQUIRE(lines.count == 7);
+  screens::capture("15-text");
   CHECK(std::string(lines.text[0]) == "kick   bd bd bd");
   CHECK(std::string(lines.text[1]) == "snare  ~ sd ~ sd");
   CHECK(std::string(lines.text[2]) == "hat    hh hh*2");
@@ -479,6 +498,7 @@ TEST_CASE("T-87 The song view: number, letters in fours, the playing letter, til
   for (const char letter : std::string("AABAB")) w.press(section(letter));
   w.frame();
   CHECK(text_at(fb, ui::kMargin, ui::kSongLettersTop, "AABA B", kText));  // grouped in fours
+  screens::capture("16-song-arrangement");
   CHECK_FALSE(has_text(fb, ui::kSongHint[0], kLegend));                     // the hint has done its job (T-92)
   w.play();
   w.run_until(w.at(1, engine::Fraction{1, 2}));
@@ -559,6 +579,7 @@ TEST_CASE("T-88 The share view: the QR at 3 px per module, the code round it, ba
   CHECK(text_at(fb, beside, ui::kShareTop + 5 * ui::kLineHeight, "e1-e1-", kText));
   CHECK(text_at(fb, beside, ui::kShareTop + 6 * ui::kLineHeight, ("e1" + id).c_str(), kText));
   CHECK(text_at(fb, ui::kShareLeft, ui::kShareTop + side + ui::kShareCodeGap, ui::kScanHint, kLegend));  // what it is for
+  screens::capture("17-share");
   CHECK(decode_qr(grid) == std::string(ui::kPlayerUrlPrefix) + shared);  // T-45 on the screen
 
   w.tap(Pad::rim);  // the view stays live: the code and its QR follow the edit
@@ -625,6 +646,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "one kick", kText));  // the tap's status, until it ends
   w.run_for(2 * kSecond);
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, ui::kSettingsHint, kLegend));  // then the hint
+  screens::capture("18-settings");  // the view at rest, with its footer rather than a passing status
 
   w.turn(Encoder::filter, 1);  // the key row: C# minor beats Db minor (D-032)
   CHECK(w.state(0).key.root == 1);
@@ -641,6 +663,7 @@ TEST_CASE("T-89 Settings: hold undo + show, the rows, the knobs that pick and se
   CHECK(w.state(0).key.mode == engine::Mode::major);
   w.frame();
   CHECK(text_at(fb, right_aligned("major"), ui::kSettingsRowsTop + ui::kLineHeight, "major", kAccent));
+  screens::capture("19-settings-scale-row");
   w.turn(Encoder::filter, -1);
 
   w.turn(Encoder::speed, 1);  // swing, 0.05 a detent
@@ -729,27 +752,32 @@ TEST_CASE("T-22 First-boot tutorial: the prompts in order, done within 45 s when
   auto read_and_act = [&] { w.run_for(5 * kSecond); };  // a tester reads the prompt and does it
 
   CHECK(has_text(fb, "tap the kick"));
+  screens::capture("01-ring-tutorial-tap-the-kick");
   read_and_act();
   w.tap(Pad::kick);
   w.frame();
   CHECK(has_text(fb, "tap it again"));
   CHECK(has_text(fb, "see it stretch?"));
   CHECK(has_text(fb, "one kick"));  // the message row still reports the edit
+  screens::capture("02-ring-tutorial-tap-it-again");
   CHECK(background_row(fb, ui::content_bottom(2) + 1));  // the ring ends above the two prompt rows
   read_and_act();
   w.tap(Pad::kick);
   w.frame();
   CHECK(has_text(fb, "tap the snare"));
+  screens::capture("03-ring-tutorial-tap-the-snare");
   // Two kicks: a dot at six o'clock. The ring has shrunk to end above the prompt's box.
   CHECK(background_row(fb, ui::content_bottom(1) + 1));
   read_and_act();
   w.tap(Pad::snare);
   w.frame();
   CHECK(has_text(fb, "now turn chance"));
+  screens::capture("04-ring-tutorial-now-turn-chance");
   read_and_act();
   w.turn(Encoder::chance, 1);
   w.frame();
   CHECK(has_text(fb, "hold show to share it"));
+  screens::capture("05-ring-tutorial-hold-show");
   read_and_act();
   w.hold(Button::show);
   REQUIRE(w.model().view == app::View::share);
@@ -757,15 +785,21 @@ TEST_CASE("T-22 First-boot tutorial: the prompts in order, done within 45 s when
   CHECK(has_text(fb, "press show twice"));
   CHECK(has_text(fb, "and tap A A B A"));
   CHECK(has_text(fb, "hold A and press play"));
+  screens::capture("06-share-tutorial-step6");
   read_and_act();
   w.press(Button::show);  // ring
   w.press(Button::show);  // text
+  w.frame();
+  screens::capture("07-text-tutorial-step6");
   w.press(Button::show);  // song
   REQUIRE(w.model().view == app::View::song);
   w.frame();
   CHECK(has_text(fb, ui::kSongHint[3], kLegend));  // the hint sits above the prompt's box, nothing covered
   CHECK(background_row(fb, ui::content_bottom(3) + 1));
+  screens::capture("08-song-hint-tutorial-step6");
   for (const char letter : std::string("AABA")) w.press(section(letter));
+  w.frame();
+  screens::capture("09-song-aaba-tutorial-step6");
   w.button_down(section('A'));
   w.run_for(kSecond / 2);
   w.press(Button::play);
@@ -776,6 +810,7 @@ TEST_CASE("T-22 First-boot tutorial: the prompts in order, done within 45 s when
   CHECK(w.frames - start <= 45 * kSecond);
   w.frame();
   CHECK_FALSE(has_text(fb, "hold A and press play"));
+  screens::capture("10-song-playing-thats-a-song");
   uint8_t flag = 0;
   uint32_t size = 0;
   CHECK(hal::read_file(app::kTutorialDoneFile, &flag, 1, &size) == hal::FileRead::ok);
@@ -934,6 +969,7 @@ TEST_CASE("T-95 Tap-tempo mode is visible: the top row marker and play's light")
   w.frame();
   CHECK(text_at(fb, ui::kArmedAfterBpm, ui::kTopRow, "tap", kAccent));  // where an armed button goes
   CHECK(text_at(fb, ui::kMargin, ui::kBottomRow, "tap 4 times in rhythm", kText));
+  screens::capture("20-ring-tap-tempo");
   CHECK(same(button_led(Button::play), ui::kAccent));  // §8.2: the mode glows like an armed button
 
   for (int i = 0; i < 4; ++i) {
