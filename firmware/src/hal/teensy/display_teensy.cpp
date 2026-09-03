@@ -20,6 +20,7 @@ constexpr int kRefreshRateHz = 60;  // §7.3
 constexpr int kVsyncSpacing = 1;
 constexpr uint8_t kRotation = 1;  // landscape, 320 wide (3 if the image is upside down; unverified)
 constexpr int kBacklightFull = 255;
+constexpr int kPercentFull = 100;
 
 ILI9341_T4::ILI9341Driver tft_(hal::pins::kDisplayCs, hal::pins::kDisplayDc, hal::pins::kDisplaySck,
                                hal::pins::kDisplayMosi, hal::pins::kDisplayMiso, hal::pins::kDisplayReset);
@@ -29,6 +30,9 @@ DMAMEM uint16_t driver_copy_[hal::kScreenWidth * hal::kScreenHeight];
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
 bool ready_ = false;
 bool lit_ = false;
+int brightness_ = kPercentFull;
+
+void apply_brightness() { analogWrite(hal::pins::kDisplayBacklight, kBacklightFull * brightness_ / kPercentFull); }
 
 }  // namespace
 
@@ -61,11 +65,16 @@ uint16_t* framebuffer() { return framebuffer_; }
 void present() {
   if (!ready_) return;
   if (!lit_) {
-    analogWrite(pins::kDisplayBacklight, kBacklightFull);
+    apply_brightness();
     lit_ = true;
   }
   if (tft_.asyncUpdateActive()) return;
   tft_.update(framebuffer_);
+}
+
+void set_brightness(int percent) {
+  brightness_ = percent < 0 ? 0 : percent > kPercentFull ? kPercentFull : percent;
+  if (lit_) apply_brightness();
 }
 
 }  // namespace hal

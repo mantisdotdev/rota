@@ -43,8 +43,10 @@ struct World {
   uint64_t timer_allocations = 0;
   float last_peak = 0.0f;  // the loudest sample of the last block rendered
 
-  World() {
+  // The tutorial has run unless a test asks for a first boot (§8.5, T-22).
+  explicit World(bool first_run = false) {
     hal_fake::reset();
+    if (!first_run) hal::write_file(app::kTutorialDoneFile, &app::kTutorialRan, 1);
     const sound::SampleBank silent{};
     app::init(silent);
     timer_frames = static_cast<int64_t>(hal_fake::timer_period_us()) * sound::kSampleRate / 1000000;
@@ -84,6 +86,9 @@ struct World {
   }
 
   void run_for(int64_t count) { run_until(frames + count); }
+
+  // At least one frame is drawn: 20 ms of world time at 60 fps (§7.3).
+  void frame() { run_for(kSecond / 50); }
 
   // A stalled timer thread: no tick until the first period boundary at or after
   // `frame`. Returns when that tick will fire.
@@ -156,6 +161,7 @@ struct World {
   const engine::State& state(int section) const { return app::model().sections[section].state(); }
   const app::Model& model() const { return app::model(); }
   std::string status() const { return app::model().status.text; }
+  std::string knob() const { return app::model().knob.text; }
 };
 
 }  // namespace app_support

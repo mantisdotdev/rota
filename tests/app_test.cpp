@@ -227,14 +227,14 @@ TEST_CASE("T-80 A knob turned while a section switch is pending is heard at once
   w.turn(Encoder::filter, -1);
   CHECK(w.state(0).filter == 9);  // A, still playing, changes now
   CHECK(w.state(1).filter == 9);  // B, waiting, carries the same value
-  CHECK(w.status() == "filter 0.9");
+  CHECK(w.knob() == "filter 0.9");
 
   w.pad_down(Pad::hat);
   w.turn(Encoder::volume, -1);
   w.pad_up(Pad::hat);
   CHECK(engine::track_of(w.state(0), Pad::hat).level == 7);
   CHECK(engine::track_of(w.state(1), Pad::hat).level == 7);
-  CHECK(w.status() == "hat level 0.7");
+  CHECK(w.knob() == "hat level 0.7");
   CHECK(w.model().master_volume == app::kDefaultMasterVolume);  // the pad took the volume control
 
   w.run_until(w.cycle_start(1) + kBlock);

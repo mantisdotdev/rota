@@ -1,6 +1,6 @@
-// Teensy input and pad LEDs: two NeoTrellis boards over I2C (pads, then the eleven
-// buttons on the second board's keys, D-045) and five encoders on interrupt pins
-// (D-053, D-054). Polled from hal::poll(); the seesaw keeps a FIFO of edges so a
+// Teensy input, pad LEDs and button backlights: two NeoTrellis boards over I2C
+// (pads, then the eleven buttons on the second board's keys, D-045, whose LEDs are
+// the backlights, D-099) and five encoders on interrupt pins (D-053, D-054). Polled from hal::poll(); the seesaw keeps a FIFO of edges so a
 // press between polls is not lost.
 #include <Adafruit_NeoTrellis.h>
 #include <Arduino.h>
@@ -46,6 +46,20 @@ Push pushes_[hal::kEncoderCount];
 
 hal::InputEvent input_[kInputCapacity];
 int input_count_ = 0;
+
+// The seesaw sends every setPixelColor over I2C at once, so a colour is written
+// only when it changes and a board is shown only when one of its colours did.
+struct Colour {
+  uint8_t red;
+  uint8_t green;
+  uint8_t blue;
+};
+Colour pad_colours_[hal::kPadCount];
+Colour button_colours_[hal::kButtonCount];
+bool pads_dirty_ = false;
+bool buttons_dirty_ = false;
+
+bool same(Colour a, uint8_t red, uint8_t green, uint8_t blue) { return a.red == red && a.green == green && a.blue == blue; }
 
 void push(hal::InputKind kind, int index, int detents) {
   if (input_count_ >= kInputCapacity) return;
@@ -145,11 +159,26 @@ int read_input(InputEvent* out, int capacity) {
 
 void set_led(int pad, uint8_t red, uint8_t green, uint8_t blue) {
   if (!pads_ready_ || pad < 0 || pad >= kPadCount) return;
+  if (same(pad_colours_[pad], red, green, blue)) return;
+  pad_colours_[pad] = Colour{red, green, blue};
   pads_.pixels.setPixelColor(static_cast<uint16_t>(pad), red, green, blue);
+  pads_dirty_ = true;
+}
+
+void set_button_led(Button button, uint8_t red, uint8_t green, uint8_t blue) {
+  const int index = static_cast<int>(button);
+  if (!buttons_ready_ || index < 0 || index >= kButtonCount) return;
+  if (same(button_colours_[index], red, green, blue)) return;
+  button_colours_[index] = Colour{red, green, blue};
+  buttons_.pixels.setPixelColor(kButtonKeys[index], red, green, blue);
+  buttons_dirty_ = true;
 }
 
 void show_leds() {
-  if (pads_ready_) pads_.pixels.show();
+  if (pads_dirty_) pads_.pixels.show();
+  if (buttons_dirty_) buttons_.pixels.show();
+  pads_dirty_ = false;
+  buttons_dirty_ = false;
 }
 
 }  // namespace hal

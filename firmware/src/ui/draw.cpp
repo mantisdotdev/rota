@@ -55,4 +55,15 @@ void fill_rect(Canvas& canvas, int x, int y, int width, int height, uint16_t col
   for (int row = y; row < y + height; ++row) horizontal_line(canvas, x, x + width - 1, row, colour);
 }
 
+// One pixel wide, just inside the rectangle.
+void rect_outline(Canvas& canvas, int x, int y, int width, int height, uint16_t colour) {
+  if (width <= 0 || height <= 0) return;
+  horizontal_line(canvas, x, x + width - 1, y, colour);
+  horizontal_line(canvas, x, x + width - 1, y + height - 1, colour);
+  for (int row = y; row < y + height; ++row) {
+    canvas.set(x, row, colour);
+    canvas.set(x + width - 1, row, colour);
+  }
+}
+
 }  // namespace ui

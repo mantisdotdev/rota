@@ -8,6 +8,7 @@ namespace ui {
 
 constexpr int kWidth = 320;
 constexpr int kHeight = 240;
+constexpr int kMargin = 6;  // every view keeps this much clear at the screen's edges
 
 struct Canvas {
   uint16_t* pixels;
@@ -23,5 +24,6 @@ void horizontal_line(Canvas& canvas, int x0, int x1, int y, uint16_t colour);
 void fill_circle(Canvas& canvas, int cx, int cy, int radius, uint16_t colour);
 void line(Canvas& canvas, int x0, int y0, int x1, int y1, uint16_t colour);
 void fill_rect(Canvas& canvas, int x, int y, int width, int height, uint16_t colour);
+void rect_outline(Canvas& canvas, int x, int y, int width, int height, uint16_t colour);
 
 }  // namespace ui

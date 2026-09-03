@@ -7,9 +7,11 @@
 
 // The ring view (PRD §9.1, D-091): eight concentric bands, kick outermost, with
 // dividers at step boundaries, dots at hits, the playhead sweeping clockwise from
-// twelve o'clock, hits that flash and swell for 250 ms, and the corners: bpm,
-// section, song and battery, transient status text. Everything the view needs
-// comes in the model; nothing here touches the HAL.
+// twelve o'clock, hits that flash and swell for 250 ms, and the top corners: bpm,
+// then section, song and battery. The ring is as large as the space between the
+// top row and `bottom` allows, so the message and prompt rows never cover it
+// (Appendix D "Overlays"); the overlay (ui/overlay.h) draws those rows. Everything
+// the view needs comes in the model; nothing here touches the HAL.
 namespace ui {
 
 // A hit that just fired, for the swell: `age` runs 0 (now) to 1 (250 ms ago).
@@ -32,9 +34,7 @@ struct RingModel {
   char section;
   int song;
   int battery;
-  const char* status;  // transient, or nullptr
-  const char* footer;  // shown while no status is, or nullptr
-  const char* armed;   // "split", "swap", "skip" while armed, or nullptr
+  int bottom;  // the lowest y the ring may reach: ui::content_bottom()
   const Flash* flashes;
   int flash_count;
 };

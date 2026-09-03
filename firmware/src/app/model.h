@@ -7,17 +7,20 @@
 #include "engine/section.h"
 #include "engine/state.h"
 
-// What the app is: four sections, the song, the transport and what the screen
-// says. The input grammar (controller) and the scheduler both change it, under
-// hal::lock(); the ring view reads a copy (D-084, D-086).
+// What the app is: four sections, the song, the transport, the settings, the
+// tutorial and what the screen says. The input grammar (controller) and the
+// scheduler both change it, under hal::lock(); the views read a copy (D-084, D-086).
 namespace app {
 
-enum class View : uint8_t { ring, text, song };  // show cycles them (§8.2, D-030)
+// show cycles ring, text and song (§8.2, D-030); its hold opens the share view
+// (§9.3) and hold undo + show the settings (§9.4); a show press leaves either (D-093, D-096).
+enum class View : uint8_t { ring, text, song, share, settings };
 
 constexpr int kStatusCapacity = 40;
 
-// Transient text in the bottom-left corner (§9.1): 1.8 s for what happened, 1 s for a
-// knob value. duration_us 0 means nothing is showing.
+// Transient text: 1.8 s for what happened in the bottom-left corner, 1 s for a
+// knob's value in the box over the middle (§9.1, D-098). duration_us 0 means
+// nothing is showing.
 struct Status {
   char text[kStatusCapacity];
   uint64_t shown_at_us;
@@ -29,7 +32,33 @@ struct Arrangement {
   char letters[engine::kMaxArrangementLength];  // A–D, one cycle each (§6.8)
 };
 
+// The rows of §9.4 that are the app's own (D-096); key and swing live in each
+// section's state. Kept here until io/ keeps them on the card.
+struct Settings {
+  int cursor;         // the selected row, a ui::SettingsRow
+  int brightness;     // percent
+  int sleep_minutes;  // 0 = never
+  bool midi_clock_in;
+  bool midi_clock_out;
+  bool sync_in;
+  bool sync_out;
+};
+
+// The first-run tutorial (§8.5, D-097): six steps, each waiting for one gesture.
+struct Tutorial {
+  bool active;
+  int step;
+  bool save_pending;  // the done flag must be written; app::tick does it outside the lock
+};
+
 constexpr int kNoSection = -1;
+constexpr int kDefaultBrightness = 100;
+constexpr int kDefaultSleepMinutes = 10;  // §7.7
+constexpr const char* kFirmwareVersion = "0.1.0";      // shown in settings; release tooling will stamp it (D-096)
+// One byte on the card: kTutorialRan once the tutorial ran or was skipped.
+constexpr const char* kTutorialDoneFile = "tutorial-done";
+constexpr uint8_t kTutorialRan = '1';
+constexpr uint8_t kTutorialPending = '0';
 
 struct Model {
   explicit Model(const engine::Kit& kit);
@@ -45,8 +74,12 @@ struct Model {
   bool song_start_pending;  // song play from the top at the next cycle boundary
   bool transport;           // play (§8.2)
   bool roll;                // split held: held pads retrigger every 1/16 cycle
+  bool song_hint_dismissed;  // a letter added or a song picked this power cycle: the song view's hint goes (§9.6)
   View view;
   Status status;
+  Status knob;
+  Settings settings;
+  Tutorial tutorial;
   engine::Tenths master_volume;  // §9.5: −6 dB by default, one detent 0.1 (D-087)
 };
 

@@ -4,7 +4,7 @@
 # Every executable lands directly in build/ so ./build/tests, ./build/simulator and
 # ./build/render work as written in CLAUDE.md.
 cmake_minimum_required(VERSION 3.20)
-project(rota_host LANGUAGES CXX)
+project(rota_host LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,6 +38,12 @@ target_include_directories(core PUBLIC "${FIRMWARE_SRC}")
 # that builds on the host also builds on the device.
 target_compile_options(core PRIVATE -fno-exceptions -fno-rtti)
 
+# qrcodegen: Nayuki's QR encoder, vendored C under firmware/lib/ where PlatformIO
+# finds it on its own (D-092). Its own target because it is C, not C++.
+add_library(qrcodegen STATIC "${REPO_ROOT}/firmware/lib/qrcodegen/qrcodegen.c")
+target_include_directories(qrcodegen PUBLIC "${REPO_ROOT}/firmware/lib/qrcodegen")
+target_link_libraries(core PUBLIC qrcodegen)
+
 # hal_sdl: the host HAL (D-016). SDL2main is not needed on macOS or Linux. An object
 # library, not an archive: every HAL function must be in the binary whatever
 # references it, and GNU ld resolves archives in one pass in link order, which
@@ -54,8 +60,9 @@ if(APPLE)
   # audio_sdl.cpp asks the output device for 128-frame IO buffers (D-090).
   target_link_libraries(hal_sdl PUBLIC "-framework CoreAudio")
 endif()
-# The simulator's "SD card" is a directory under out/, which git ignores.
-target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard")
+# The simulator's "SD card" and its screenshots are directories under out/, which git ignores.
+target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard"
+                                           ROTA_SCREENS_DIR="${REPO_ROOT}/out/screens")
 
 # The simulator reads the kit's WAVs through the render tool's loader (host-only code).
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
