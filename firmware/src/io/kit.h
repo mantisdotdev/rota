@@ -9,9 +9,15 @@
 // kit.json a kit is authored in.
 namespace io {
 
+// A kit id as share-format §2 spells one: 1–12 of `a`–`z` and `0`–`9`. Everything that
+// reaches a path comes off a card, so nothing that could climb out of `kits/` is a name
+// this firmware will use (D-109).
+bool is_kit_id(const char* text);
+
 // Reads `kits/<id>/kit.txt` into `kit`. False when there is no such kit or the file
 // does not say what a kit is, which is logged; `kit` is then unspecified and the
-// caller keeps whatever it had.
+// caller keeps whatever it had. The file's own `id` must be the folder it was found
+// in, or the kit and its samples would be looked for in two different places.
 bool load_kit(const char* id, engine::Kit& kit);
 
 // Reads every sample pad's WAV into the memory hal::sample_memory() gives, and fills

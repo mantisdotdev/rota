@@ -5,6 +5,7 @@
 
 #include "engine/limits.h"
 #include "hal/hal.h"
+#include "io/kit.h"
 #include "io/lines.h"
 
 namespace io {
@@ -111,8 +112,7 @@ void read_setting(char* line, Settings& settings) {
   const char* key = line;
   const char* text = separator + 1;
   if (std::strcmp(key, "kit") == 0) {  // a name, not a number, and the only one here
-    const size_t length = std::strlen(text);
-    if (length > 0 && length <= engine::kKitIdLength) std::strcpy(settings.kit, text);
+    if (is_kit_id(text)) std::strcpy(settings.kit, text);  // and a name that cannot be a path
     return;
   }
   int value = 0;

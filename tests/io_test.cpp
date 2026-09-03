@@ -696,12 +696,13 @@ TEST_CASE("T-101 The kit on the card is the kit compiled in, and a file that is 
 TEST_CASE("T-101 The device plays the kit its card names, and the one built in when it cannot") {
   hal_fake::reset();
   std::string text = kit_file("lofi/kit.txt");
-  const std::string quieter = "swing=40";
-  text.replace(text.find("swing=15"), 8, quieter);  // a kit that is plainly not the built-in one
+  text.replace(text.find("id=lofi"), 7, "id=jazz");    // a kit is named by the folder it lives in
+  text.replace(text.find("swing=15"), 8, "swing=40");  // and this one is plainly not the built-in kit
   put("kits/jazz/kit.txt", text);
   put("settings.txt", "kit=jazz\n");
 
   World w{World::OnThisCard{}};
+  CHECK(std::string(app::kit().id) == "jazz");
   CHECK(app::kit().swing_hundredths == 40);  // the card's kit, not the compiled one
   CHECK(w.state(0).swing == 40);             // and a fresh loop takes its swing from it
 
@@ -710,4 +711,55 @@ TEST_CASE("T-101 The device plays the kit its card names, and the one built in w
   World fallback{World::OnThisCard{}};
   CHECK(app::kit() == engine::kits::kLofi);  // no such kit on the card: the device still plays
   CHECK(logged("kits/nosuch/kit.txt"));
+}
+
+TEST_CASE("T-101 Nothing a card holds becomes a path out of the kit it names") {
+  hal_fake::reset();
+  engine::Kit kit{};
+  for (const char* name : {"../../etc", "lofi/../..", "LOFI", "", "waytoolongakitid"}) {
+    CAPTURE(name);
+    CHECK_FALSE(io::load_kit(name, kit));  // not a kit id, so no path is built from it at all
+  }
+
+  // The settings keep the kit they had rather than take one that could climb out.
+  put("settings.txt", "kit=../../elsewhere\n");
+  io::Settings settings{};
+  REQUIRE(io::load_settings(settings));
+  CHECK(std::string(settings.kit) == std::string(io::kDefaultSettings.kit));
+
+  // A pad's source is the other half of a path, so it is a file name or the kit is refused.
+  std::string text = kit_file("lofi/kit.txt");
+  text.replace(text.find("kick.wav"), 8, "../kick.wav");
+  put("kits/lofi/kit.txt", text);
+  CHECK_FALSE(io::load_kit("lofi", kit));
+
+  // And a kit that calls itself something other than its folder is refused, since its
+  // samples would then be looked for somewhere else entirely.
+  text = kit_file("lofi/kit.txt");
+  text.replace(text.find("id=lofi"), 7, "id=jazz");
+  put("kits/lofi/kit.txt", text);
+  CHECK_FALSE(io::load_kit("lofi", kit));
+  CHECK(logged("calls itself a different kit"));
+}
+
+TEST_CASE("T-101 A kit file missing any one of its fields does not load") {
+  hal_fake::reset();
+  engine::Kit kit{};
+  const std::string text = kit_file("lofi/kit.txt");
+  for (const char* field : {"id=", "swing=", "filter=", "fx=", "sidechain=", "pluck=", "dice=", "progression="}) {
+    const std::string missing = field;
+    CAPTURE(missing);
+    std::string without;
+    bool dropped = false;
+    for (const std::string& line : lines_of(text)) {
+      if (line.rfind(field, 0) == 0) {  // every line of that kind: lofi has three dice loops
+        dropped = true;
+        continue;
+      }
+      without += line + "\n";
+    }
+    REQUIRE(dropped);
+    put("kits/lofi/kit.txt", without);
+    CHECK_FALSE(io::load_kit("lofi", kit));  // a zero left where a field should be is not this kit
+  }
 }

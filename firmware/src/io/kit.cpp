@@ -19,6 +19,7 @@ constexpr uint32_t kKitFileCapacity = 4096;
 constexpr int kMaxKitLines = 96;
 constexpr int kMaxFields = 8;  // a pad line, the longest
 constexpr const char* kKitPrefix = "RTK1";
+constexpr const char* kKitFileName = "kit.txt";
 char kit_file_[kKitFileCapacity];
 constexpr uint32_t kRiffHeaderBytes = 12;
 constexpr uint32_t kChunkHeaderBytes = 8;
@@ -127,6 +128,17 @@ bool number(const char* text, int most, int& out) {
   return digits > 0;
 }
 
+// A sample's file name, and nothing that could name a file outside the kit's folder:
+// letters, digits, and the three punctuation marks a file name needs.
+bool is_file_name(const char* text) {
+  if (*text == '\0' || *text == '.') return false;  // no hidden files, and no `..`
+  for (const char* c = text; *c != '\0'; ++c) {
+    const bool ordinary = (*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '.' || *c == '-' || *c == '_';
+    if (!ordinary) return false;
+  }
+  return true;
+}
+
 bool copy_word(const char* from, char* into, int capacity) {
   const size_t length = std::strlen(from);
   if (length == 0 || length >= static_cast<size_t>(capacity)) return false;
@@ -155,7 +167,8 @@ bool read_pad(char** fields, int count, engine::KitPad& pad) {
   const bool sample = std::strcmp(fields[1], "sample") == 0;
   if (!sample && std::strcmp(fields[1], "synth") != 0) return false;
   if (!copy_word(fields[0], pad.name, sizeof pad.name)) return false;
-  if (!copy_word(fields[2], pad.source, sizeof pad.source)) return false;
+  // The source becomes half of a path, so it is a file name or it is nothing.
+  if (!is_file_name(fields[2]) || !copy_word(fields[2], pad.source, sizeof pad.source)) return false;
   if (!number(fields[3], 24, pitch) || !number(fields[4], 100, start) || !number(fields[5], 100, decay) ||
       !number(fields[6], 9, octave) || !number(fields[7], engine::kTenthsMax, send)) {
     return false;
@@ -194,12 +207,16 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
   int dice = 0;
   bool have_pluck = false;
   bool have_id = false;
+  bool have_swing = false;
+  bool have_filter = false;
+  bool have_fx = false;
+  bool have_sidechain = false;
   char* fields[kMaxFields];
   for (int i = 1; i < count; ++i) {
     char* line = lines[i];
     int got = fields_of(line, "id", fields, 1);
     if (got == 1) {
-      if (!copy_word(fields[0], kit.id, sizeof kit.id)) return false;
+      if (!is_kit_id(fields[0]) || !copy_word(fields[0], kit.id, sizeof kit.id)) return false;
       have_id = true;
       continue;
     }
@@ -208,18 +225,21 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
     if (got == 1) {
       if (!number(fields[0], 100, value)) return false;
       kit.swing_hundredths = static_cast<uint8_t>(value);
+      have_swing = true;
       continue;
     }
     got = fields_of(line, "filter", fields, 1);
     if (got == 1) {
       if (!number(fields[0], engine::kTenthsMax, value)) return false;
       kit.filter = static_cast<engine::Tenths>(value);
+      have_filter = true;
       continue;
     }
     got = fields_of(line, "fx", fields, 1);
     if (got == 1) {
       if (!number(fields[0], engine::kTenthsMax, value)) return false;
       kit.fx = static_cast<engine::Tenths>(value);
+      have_fx = true;
       continue;
     }
     got = fields_of(line, "sidechain", fields, 3);
@@ -229,6 +249,7 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
       int release = 0;
       if (!number(fields[0], 1, on) || !number(fields[1], 24, duck) || !number(fields[2], 5000, release)) return false;
       kit.sidechain = engine::Sidechain{on == 1, static_cast<uint8_t>(duck), static_cast<uint16_t>(release)};
+      have_sidechain = true;
       continue;
     }
     got = fields_of(line, "progression", fields, engine::kMaxNoteSequenceLength);
@@ -265,7 +286,10 @@ bool read_kit(char** lines, int count, engine::Kit& kit) {
     return false;  // a line this firmware does not know: a kit is not a place to guess
   }
   kit.dice_loop_count = static_cast<uint8_t>(dice);
-  return have_id && have_pluck && progressions == engine::kModeCount && pads == engine::kTrackCount && dice > 0;
+  // Every field, not just the ones with a count: an absent line would otherwise leave
+  // the zero `engine::Kit{}` put there, and a kit with no swing is not this kit.
+  return have_id && have_pluck && have_swing && have_filter && have_fx && have_sidechain &&
+         progressions == engine::kModeCount && pads == engine::kTrackCount && dice > 0;
 }
 
 }  // namespace
@@ -306,9 +330,22 @@ bool load_samples(const engine::Kit& kit, sound::SampleBank& bank) {
   return true;
 }
 
+bool is_kit_id(const char* text) {
+  const size_t length = std::strlen(text);
+  if (length == 0 || length > engine::kKitIdLength) return false;
+  for (const char* c = text; *c != '\0'; ++c) {
+    if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9'))) return false;
+  }
+  return true;
+}
+
 bool load_kit(const char* id, engine::Kit& kit) {
+  if (!is_kit_id(id)) {
+    hal::log("io: that is not a kit id, so no kit was looked for");
+    return false;
+  }
   char path[kPathCapacity];
-  std::snprintf(path, sizeof path, "kits/%s/kit.txt", id);
+  std::snprintf(path, sizeof path, "kits/%s/%s", id, kKitFileName);
   uint32_t size = 0;
   if (hal::read_file(path, reinterpret_cast<uint8_t*>(kit_file_), kKitFileCapacity - 1, &size) != hal::FileRead::ok ||
       size == 0) {
@@ -321,6 +358,12 @@ bool load_kit(const char* id, engine::Kit& kit) {
   kit = engine::Kit{};
   if (count < 0 || !read_kit(lines, count, kit)) {
     refuse(path, "does not say what a kit is");
+    return false;
+  }
+  // Its samples are looked for by its own id, so a kit that calls itself something
+  // else than the folder it sits in would send us hunting in another folder.
+  if (std::strcmp(kit.id, id) != 0) {
+    refuse(path, "calls itself a different kit than the folder it is in");
     return false;
   }
   return true;
