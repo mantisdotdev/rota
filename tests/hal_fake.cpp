@@ -16,6 +16,7 @@ hal_fake::Led leds_[hal::kPadCount];
 hal_fake::Led button_leds_[hal::kButtonCount];
 int brightness_ = 100;
 bool refuse_writes_ = false;
+bool refuse_sample_memory_ = false;
 int writes_ = 0;
 std::map<std::string, int> writes_by_path_;
 uint16_t framebuffer_[hal::kScreenWidth * hal::kScreenHeight];
@@ -37,6 +38,7 @@ void reset() {
   std::memset(button_leds_, 0, sizeof button_leds_);
   brightness_ = 100;
   refuse_writes_ = false;
+  refuse_sample_memory_ = false;
   writes_ = 0;
   writes_by_path_.clear();
   std::memset(framebuffer_, 0, sizeof framebuffer_);
@@ -46,6 +48,7 @@ void reset() {
 
 void set_time_us(uint64_t now_us) { now_us_ = now_us; }
 void refuse_writes(bool refuse) { refuse_writes_ = refuse; }
+void refuse_sample_memory(bool refuse) { refuse_sample_memory_ = refuse; }
 void push(const hal::InputEvent& event) { input_.push_back(event); }
 hal::AudioCallback audio_callback() { return audio_callback_; }
 hal::TimerCallback timer_callback() { return timer_callback_; }
@@ -119,6 +122,16 @@ bool write_file(const char* path, const uint8_t* data, uint32_t size) {
   if (refuse_writes_) return false;
   files_[path] = std::vector<uint8_t>(data, data + size);
   return true;
+}
+
+int16_t* sample_memory(uint32_t* frames) {
+  static int16_t memory[kSampleMemoryFrames];
+  if (refuse_sample_memory_) {
+    *frames = 0;
+    return nullptr;
+  }
+  *frames = kSampleMemoryFrames;
+  return memory;
 }
 
 int battery_percent() { return 87; }

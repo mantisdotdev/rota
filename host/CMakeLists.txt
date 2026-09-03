@@ -64,9 +64,13 @@ endif()
 target_compile_definitions(hal_sdl PRIVATE ROTA_STORAGE_DIR="${REPO_ROOT}/out/sdcard"
                                            ROTA_SCREENS_DIR="${REPO_ROOT}/out/screens")
 
-# The simulator reads the kit's WAVs through the render tool's loader (host-only code).
+# The simulator reads its kit off its "SD card" through io/, as the device does, so the
+# card starts with the kits the repo ships. Copied at configure time, which is when the
+# other build-time paths are settled; re-run cmake after changing a kit's WAVs.
+file(COPY "${REPO_ROOT}/spec/kits/" DESTINATION "${REPO_ROOT}/out/sdcard/kits")
+
 add_executable(simulator "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
-target_link_libraries(simulator PRIVATE hal_sdl offline)
+target_link_libraries(simulator PRIVATE hal_sdl core)
 
 # tests: doctest on the host. No SDL, so it runs headless in CI; tests/hal_fake.cpp
 # stands in for the HAL so app/ runs under a scripted clock.

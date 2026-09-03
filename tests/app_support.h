@@ -45,10 +45,19 @@ struct World {
 
   // The tutorial has run unless a test asks for a first boot (§8.5, T-22).
   explicit World(bool first_run = false) {
+    const sound::SampleBank silent{};
+    start(first_run, silent);
+  }
+
+  // A world whose sample pads have sounds, for the tests that need to hear one. The
+  // bank is read off the card before the world starts; hal_fake::reset() clears the
+  // card's files but not the memory the samples were read into, so it stays valid.
+  explicit World(const sound::SampleBank& samples) { start(false, samples); }
+
+  void start(bool first_run, const sound::SampleBank& samples) {
     hal_fake::reset();
     if (!first_run) hal::write_file(app::kTutorialDoneFile, &app::kTutorialRan, 1);
-    const sound::SampleBank silent{};
-    app::init(silent);
+    app::init(samples);
     timer_frames = static_cast<int64_t>(hal_fake::timer_period_us()) * sound::kSampleRate / 1000000;
     REQUIRE(timer_frames > 0);  // a period under 21 us would never advance the world
     REQUIRE(hal_fake::audio_callback() != nullptr);
